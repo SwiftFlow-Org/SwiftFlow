@@ -219,8 +219,10 @@ typedef struct {
 
     const char* title;
 
-    uint32_t    width;
-    uint32_t    height;
+    double    width;
+    double    height;
+    double    min_width;
+    double    min_height;
 } SFDesktopConfig;
 
 typedef struct {

@@ -16,6 +16,7 @@ public struct SceneBuilder {
 public protocol LifecycleProvider {
     var lifecycle: SceneLifecycle { get }
     var rootView: any View { get }
+    var windowConfig: WindowConfig { get }
 }
 
 extension WindowGroup: LifecycleProvider {

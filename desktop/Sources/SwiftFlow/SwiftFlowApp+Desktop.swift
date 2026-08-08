@@ -23,7 +23,9 @@ extension SwiftFlowApp {
             host.run(
                 title: DesktopWindow.title,
                 width: DesktopWindow.width,
-                height: DesktopWindow.height
+                height: DesktopWindow.height,
+                min_width:  provider.windowConfig.minWidth  ?? 0,
+                min_height: provider.windowConfig.minHeight ?? 0
             )
         }
     }
@@ -31,6 +33,6 @@ extension SwiftFlowApp {
 
 public enum DesktopWindow {
     nonisolated(unsafe) public static var title: String = "SwiftFlow"
-    nonisolated(unsafe) public static var width: UInt32 = 420
-    nonisolated(unsafe) public static var height: UInt32 = 900
+    nonisolated(unsafe) public static var width: Double = 420.0
+    nonisolated(unsafe) public static var height: Double = 900.0
 }

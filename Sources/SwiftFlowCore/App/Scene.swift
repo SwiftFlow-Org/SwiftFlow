@@ -4,10 +4,16 @@ public protocol Scene {
     associatedtype Body
     var body: Body { get }
     var lifecycle: SceneLifecycle { get }
+    var windowConfig: WindowConfig { get set }
+}
+
+public extension Scene {
+    var windowConfig: WindowConfig { .init() }
 }
 
 public struct AnyScene {
     let lifecycle: SceneLifecycle
+    let windowConfig: WindowConfig
 }
 
 public struct SceneLifecycle {
@@ -23,12 +29,20 @@ public struct SceneLifecycle {
 public struct WindowGroup<Content: View>: Scene {
     public let content: Content
     public var lifecycle: SceneLifecycle = .init()
+    public var windowConfig: WindowConfig = .init()
 
     public init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
     public var body: Never { fatalError() }
+
+    public func minWindowSize(width: Double, height: Double) -> Self {
+        var copy = self
+        copy.windowConfig.minWidth = width
+        copy.windowConfig.minHeight = height
+        return copy
+    }
 
     public func onForeground(_ action: @escaping () -> Void) -> Self {
         var copy = self

@@ -36,6 +36,7 @@ public struct Material: Sendable {
     public static let regularMaterial = Material(blurRadius: 7, tint: Color(r: 1, g: 1, b: 1, a: 0.25))
     public static let thickMaterial = Material(blurRadius: 9, tint: Color(r: 1, g: 1, b: 1, a: 0.4))
     public static let ultraThickMaterial = Material(blurRadius: 11, tint: Color(r: 1, g: 1, b: 1, a: 0.55))
+    public static let hardMaterial = Material(blurRadius: 6, tint: .background.opacity(0.55))
 }
 
 extension Material: PrimitiveView {

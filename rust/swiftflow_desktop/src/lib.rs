@@ -7,17 +7,17 @@ use winit::event_loop::EventLoop;
 
 #[repr(C)]
 pub struct SFDesktopConfig {
-
     pub title: *const c_char,
 
-    pub width: u32,
-    pub height: u32,
+    pub width: f64,
+    pub height: f64,
+    pub min_width: f64,
+    pub min_height: f64,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct SFDesktopSurfaceInfo {
-
     pub width: u32,
     pub height: u32,
 
@@ -32,7 +32,6 @@ pub struct SFDesktopSurfaceInfo {
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct SFDesktopCallbacks {
-
     pub frame: Option<extern "C" fn(f32)>,
     pub pointer_down: Option<extern "C" fn(f32, f32, f64)>,
     pub pointer_moved: Option<extern "C" fn(f32, f32, f64)>,
@@ -67,7 +66,6 @@ pub extern "C" fn sf_desktop_run(config: SFDesktopConfig, callbacks: SFDesktopCa
     let title = if config.title.is_null() {
         "SwiftFlow".to_string()
     } else {
-
         unsafe { CStr::from_ptr(config.title) }
             .to_string_lossy()
             .into_owned()
@@ -76,8 +74,10 @@ pub extern "C" fn sf_desktop_run(config: SFDesktopConfig, callbacks: SFDesktopCa
     let event_loop = EventLoop::new().expect("could not create the platform event loop");
     let mut app = host::DesktopApp::new(
         title,
-        config.width.max(1),
-        config.height.max(1),
+        config.width.max(1.0),
+        config.height.max(1.0),
+        config.min_width,
+        config.min_height,
         callbacks,
     );
 

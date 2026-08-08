@@ -168,7 +168,7 @@ private func onIMEEnabled(_ enabled: UInt32) {
 extension DesktopHost {
 
     @MainActor
-    func run(title: String, width: UInt32, height: UInt32) {
+    func run(title: String, width: Double, height: Double, min_width: Double, min_height: Double) {
 
         TextInput.shared.setIMEAllowed = { sf_desktop_set_ime_allowed($0 ? 1 : 0) }
         TextInput.shared.setIMECursorArea = { sf_desktop_set_ime_cursor_area($0, $1, $2, $3) }
@@ -188,7 +188,9 @@ extension DesktopHost {
         )
 
         title.withCString { titlePtr in
-            let config = SFDesktopConfig(title: titlePtr, width: width, height: height)
+            let config = SFDesktopConfig(title: titlePtr, width: width, height: height, min_width: min_width, min_height: min_height)
+            print("config:", config)
+            print("callbacks:", callbacks)
             sf_desktop_run(config, callbacks)
         }
 

@@ -10,15 +10,16 @@ use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, Ime, MouseButton, WindowEvent};
-use winit::keyboard::ModifiersState;
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
+use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
 
 const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
 pub struct DesktopApp {
     title: String,
-    logical_size: (u32, u32),
+    logical_size: (f64, f64),
+    min_size: (f64, f64),
     callbacks: SFDesktopCallbacks,
 
     window: Option<Arc<Window>>,
@@ -36,13 +37,16 @@ pub struct DesktopApp {
 impl DesktopApp {
     pub fn new(
         title: String,
-        width: u32,
-        height: u32,
+        width: f32,
+        height: f32,
+        min_width: f32,
+        min_height: f32,
         callbacks: SFDesktopCallbacks,
     ) -> Self {
         Self {
             title,
             logical_size: (width, height),
+            min_size: (min_width, min_height),
             callbacks,
             window: None,
             started: Instant::now(),
@@ -78,14 +82,18 @@ impl DesktopApp {
 
 impl ApplicationHandler for DesktopApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-
         if self.window.is_some() {
             return;
         }
 
-        let attributes = Window::default_attributes()
+        let mut attributes = Window::default_attributes()
             .with_title(&self.title)
-            .with_inner_size(LogicalSize::new(self.logical_size.0, self.logical_size.1));
+            .with_inner_size(LogicalSize::new(self.width, self.height));
+
+        if self.min_width > 0.0 && self.min_height > 0.0 {
+            attributes =
+                attributes.with_min_inner_size(LogicalSize::new(self.min_width, self.min_height));
+        }
 
         #[cfg(target_os = "macos")]
         let attributes = {
@@ -114,12 +122,7 @@ impl ApplicationHandler for DesktopApp {
         self.window = Some(window);
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _id: WindowId,
-        event: WindowEvent,
-    ) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => {
                 if let Some(lifecycle) = self.callbacks.lifecycle {
@@ -201,7 +204,9 @@ impl ApplicationHandler for DesktopApp {
             }
 
             WindowEvent::KeyboardInput { event, .. } => {
-                let Some(key) = self.callbacks.key else { return };
+                let Some(key) = self.callbacks.key else {
+                    return;
+                };
                 let code = text_input::map_key(&event.logical_key);
 
                 if code == text_input::SF_KEY_OTHER {
@@ -227,7 +232,9 @@ impl ApplicationHandler for DesktopApp {
                     }
                 }
                 Ime::Preedit(text, cursor) => {
-                    let Some(cb) = self.callbacks.ime_preedit else { return };
+                    let Some(cb) = self.callbacks.ime_preedit else {
+                        return;
+                    };
 
                     let (begin, end) = cursor.map_or((-1, -1), |(b, e)| (b as i32, e as i32));
                     match CString::new(text) {
@@ -236,7 +243,9 @@ impl ApplicationHandler for DesktopApp {
                     }
                 }
                 Ime::Commit(text) => {
-                    let Some(cb) = self.callbacks.ime_commit else { return };
+                    let Some(cb) = self.callbacks.ime_commit else {
+                        return;
+                    };
                     if let Ok(c) = CString::new(text) {
                         cb(c.as_ptr());
                     }
@@ -248,7 +257,6 @@ impl ApplicationHandler for DesktopApp {
                 let dt = self
                     .last_frame
                     .map(|last| now.duration_since(last).as_secs_f32())
-
                     .unwrap_or(FRAME_INTERVAL.as_secs_f32());
                 self.last_frame = Some(now);
 
@@ -264,7 +272,6 @@ impl ApplicationHandler for DesktopApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + FRAME_INTERVAL));
         if let Some(window) = &self.window {
-
             if let Some(allowed) = text_input::take_ime_allowed() {
                 window.set_ime_allowed(allowed);
             }
@@ -279,7 +286,6 @@ impl ApplicationHandler for DesktopApp {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-
         self.window = None;
     }
 }
