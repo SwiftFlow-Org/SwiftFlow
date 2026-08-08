@@ -2,9 +2,7 @@
 
 A SwiftUI-inspired declarative UI framework for iOS. Swift provides the
 declarative API surface; a Rust core handles layout, the node tree, and
-text rasterization; rendering is done with wgpu/Metal. Built and run
-without Xcode, using [xtool](https://github.com/xtool-org/xtool) — the
-normal dev loop is Linux/WSL2 with a physical iPhone attached over USB.
+text rasterization; rendering is done with wgpu/Metal.
 
 ## Layout
 
@@ -31,12 +29,10 @@ and `@main struct App: SwiftFlowApp` are identical on every platform.
 ## The CLI
 
 ```
-cargo install --git https://github.com/celymyst/SwiftFlow
+cargo install --git https://github.com/SwiftFlow-Org/SwiftFlow swiftflow 
 ```
 
-The repository root *is* the CLI's crate, which is why that command needs
-no crate name — `cargo install --git` reads the manifest at the root of
-the clone.
+### CLI usage
 
 ```
 swiftflow new <name> [--pin 0.1.0]   create a project
@@ -46,9 +42,8 @@ swiftflow doctor                     what is installed, and what this project re
 ```
 
 `new` pins the version that is current at the time, explicitly, because
-`current` moves — a project that says nothing keeps building against
-whatever was installed last, which is fine for a scratch app and wrong
-for one you come back to.
+`current` moves. A project that says nothing keeps building against
+whatever was installed last.
 
 `run` and `build` find the project by walking up for a `Package.swift`,
 so they work from anywhere inside it. They resolve the pin **the same way
@@ -170,22 +165,12 @@ The app's `Package.swift` resolves that against `$SWIFTFLOW_HOME` (default
 `<root>/apple`, `<root>/desktop` or `<root>/android` according to
 `SWIFTFLOW_PLATFORM`. A manifest runs on the host and can read the
 filesystem, so this needs no code generation step and no absolute path
-committed anywhere — `swift build` works on a fresh clone.
+committed anywhere.
 
 Building:
 
 ```
 cd myapp && swiftflow run
-```
-
-### The demo app
-
-`SwiftFlowTest` used to live in this repository. It is an ordinary
-consumer project now, so it moved out — which is also what proves the
-framework works without one. To get it back:
-
-```
-git checkout 007e41c -- SwiftFlowTest android
 ```
 
 ### The Rust workspace
@@ -229,7 +214,7 @@ unaffected by the subfolder layout — `lib.rs` uses `#[path = "..."]`
 attributes so every existing `use crate::X` reference works unchanged.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the invariants and design
-decisions baked into this code — read it before touching layout, text
+decisions baked into this code. Read it before touching layout, text
 rendering, or state.
 
 ## Building & running
