@@ -1,0 +1,18 @@
+# Rust build output. Large (11G+ across triples) and entirely derived —
+# an installed version ships source and builds into a shared cache under
+# ~/.swiftflow/cache instead.
+/target/
+rust/target/
+tools/target/
+
+# Swift build output
+.build/
+apple/.build/
+desktop/.build/
+android/.build/
+
+# Stray/OS-specific files
+.DS_Store
+*:Zone.Identifier
+xtool/
+xtool.yml

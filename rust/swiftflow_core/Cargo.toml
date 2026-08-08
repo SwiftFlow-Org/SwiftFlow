@@ -1,0 +1,33 @@
+[package]
+name = "swiftflow_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "swiftflow_core"
+crate-type = ["staticlib", "rlib"]
+
+# Each icon face is roughly half a megabyte of TTF compiled into the
+# binary, so they are individually trimmable. All five are on by default:
+# an icon set missing weights is a surprise at the call site, and 2.5 MB
+# is the same order as the text font already embedded here.
+[features]
+default = ["icons"]
+icons = ["icon-thin", "icon-light", "icon-regular", "icon-bold", "icon-fill"]
+icon-thin = []
+icon-light = []
+icon-regular = []
+icon-bold = []
+icon-fill = []
+
+[dependencies]
+bytemuck = { version = "1.0", features = ["derive"] }
+fontdue  = "0.9"
+ttf-parser = "0.21"
+png = "0.17"        # decode + (test-only) encode for image fixtures
+jpeg-decoder = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

@@ -1,0 +1,44 @@
+# The `swiftflow` CLI.
+#
+# At the repository root, and the root package, so installing is one line
+# with nothing to look up:
+#
+#   cargo install --git https://github.com/celymyst/SwiftFlow
+#
+# `cargo install --git` reads the manifest at the *root* of the clone. A
+# CLI tucked inside tools/ would have to be named on the command line and
+# would still only resolve if cargo found a workspace to search, so the
+# root is where this has to be for the obvious command to work.
+#
+# `exclude` keeps the two existing workspaces independent. rust/ builds
+# the shipping runtime for iOS and Android; tools/ builds desktop GUI
+# tooling. Neither should ever appear in the other's lockfile — or in
+# this one — which is the same reason they are separate from each other.
+
+[package]
+name = "swiftflow"
+version = "0.1.0"
+edition = "2021"
+description = "The SwiftFlow CLI — create, build and run SwiftFlow apps"
+license = "MIT"
+repository = "https://github.com/celymyst/SwiftFlow"
+rust-version = "1.74"
+
+[workspace]
+exclude = ["rust", "tools"]
+
+[lib]
+name = "swiftflow_cli"
+path = "cli/src/lib.rs"
+
+[[bin]]
+name = "swiftflow"
+path = "cli/src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
+toml = { version = "0.8", features = ["parse"] }
+
+[profile.release]
+opt-level = 2

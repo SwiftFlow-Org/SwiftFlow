@@ -1,0 +1,13 @@
+# Developer tooling — deliberately a *separate* workspace from
+# ../rust/, which builds the shipping runtime for iOS/Android.
+#
+# Keeping them apart means an eframe/winit dependency tree never lands
+# in the lockfile the device build resolves against, and a bare
+# `cargo build` in the runtime workspace never compiles a desktop GUI
+# it has no use for.
+[workspace]
+members = [
+    "swiftflow_assets",
+    "swiftflow_assets_editor",
+]
+resolver = "2"

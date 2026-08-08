@@ -1,0 +1,17 @@
+[package]
+name = "swiftflow_desktop"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "swiftflow_desktop"
+# staticlib for the Swift executable to link; rlib so the crate's own
+# tests can exercise the pure helpers.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+swiftflow_core = { path = "../swiftflow_core" }
+# Depended on as an rlib for `init_with_target` — the desktop host owns
+# its window, so it never needs the C surface-descriptor path.
+swiftflow_wgpu = { path = "../swiftflow_wgpu" }
+winit = "0.30"

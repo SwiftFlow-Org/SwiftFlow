@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+xtool/
+xtool.yml
+*.ipa
+.DS_Store

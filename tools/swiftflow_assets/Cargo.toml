@@ -1,0 +1,15 @@
+[package]
+name = "swiftflow_assets"
+version = "0.1.0"
+edition = "2021"
+
+# No GUI dependencies here on purpose: this crate is the catalogue
+# format and its operations, so the build-phase CLI stays light and
+# every rule about the format is testable without a display.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[[bin]]
+name = "sf-assets"
+path = "src/bin/sf-assets.rs"

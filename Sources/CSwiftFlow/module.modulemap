@@ -1,0 +1,4 @@
+module CSwiftFlow {
+    header "SwiftFlowMetal.h"
+    export *
+}

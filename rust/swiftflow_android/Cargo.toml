@@ -1,0 +1,41 @@
+[package]
+name = "swiftflow_android"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "swiftflow_android"
+# staticlib for the Swift shared library to link (the .so Android loads
+# has to contain both halves); rlib so the crate's own tests can exercise
+# the pure helpers on the host.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+swiftflow_core = { path = "../swiftflow_core" }
+# Depended on as an rlib for `init_with_target` — this host owns its
+# window, exactly like the desktop one, so it never needs the C
+# surface-descriptor path and `SFSurfaceKind::RawHandle` stays unused.
+swiftflow_wgpu = { path = "../swiftflow_wgpu" }
+winit = "0.30"
+
+# Android-only, so a `cargo check` on the host doesn't drag the NDK in.
+# The versions are the ones winit 0.30.13 already resolved — see
+# Cargo.lock — so adding them here negotiates nothing new.
+#
+# `game-activity`, not `native-activity`, and that is a decision with a
+# Java dependency attached — see src/ime.rs and ARCHITECTURE.md. It is
+# the only way to get GameTextInput, and GameTextInput is the only way
+# to get soft-keyboard text on Android: winit's Android backend never
+# emits `WindowEvent::Ime` and actively discards the `TextEvent` that
+# carries it.
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6", features = ["game-activity"] }
+ndk = { version = "0.9", features = ["api-level-24"] }
+ndk-sys = "0.6"
+jni = "0.22"
+winit = { version = "0.30", features = ["android-game-activity"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

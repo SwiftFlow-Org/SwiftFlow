@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "swiftflow_core",
+    "swiftflow_wgpu",
+    # Desktop host. Only ever built for desktop targets, so winit never
+    # enters an iOS build — cargo only compiles what the chosen -p asks for.
+    "swiftflow_desktop",
+    # Android host. Same arrangement: its NDK/JNI dependencies are behind
+    # a `cfg(target_os = "android")` dependency table, so a workspace-wide
+    # `cargo test` on the host compiles only the platform-free parts.
+    "swiftflow_android",
+]
+resolver = "2"
+
+# Force Cargo to always recheck source files
+[workspace.metadata]

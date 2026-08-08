@@ -1,0 +1,34 @@
+
+[package]
+name = "swiftflow_wgpu"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "swiftflow_wgpu"
+# rlib alongside staticlib so swiftflow_desktop can depend on this as an
+# ordinary Rust crate (it needs `init_with_target`, not the C ABI) while
+# iOS still links the staticlib.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+swiftflow_core = { path = "../swiftflow_core" }
+# No backend features listed on purpose: wgpu's own target-specific
+# dependencies already turn on Vulkan for Linux/Windows, DX12 for
+# Windows and Metal for Apple. Naming one here would only ever narrow
+# that, which is what pinned this to Apple before.
+wgpu     = { version = "22" }
+pollster = "0.3"
+bytemuck = { version = "1.0", features = ["derive"] }
+fontdue  = "0.9"
+
+[dev-dependencies]
+# Shader validation in CI, on machines with no GPU. naga is wgpu's own
+# front end — the same parser and validator `create_shader_module` runs —
+# so a module that passes here is one the backend will accept.
+naga = { version = "22", features = ["wgsl-in"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
