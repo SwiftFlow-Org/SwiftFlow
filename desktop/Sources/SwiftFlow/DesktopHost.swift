@@ -188,10 +188,13 @@ extension DesktopHost {
         )
 
         title.withCString { titlePtr in
-            let config = SFDesktopConfig(title: titlePtr, width: width, height: height, min_width: min_width, min_height: min_height)
-            print("config:", config)
-            print("callbacks:", callbacks)
-            sf_desktop_run(config, callbacks)
+            var config = SFDesktopConfig(title: titlePtr, width: width, height: height, min_width: min_width, min_height: min_height)
+            var cbs = callbacks
+            withUnsafePointer(to: &config) { configPtr in
+                withUnsafePointer(to: &cbs) { cbsPtr in
+                    sf_desktop_run(configPtr, cbsPtr)
+                }
+            }
         }
 
         exit(0)

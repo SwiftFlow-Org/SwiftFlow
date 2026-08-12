@@ -67,6 +67,7 @@ public final class TextInput {
     }
 
     public func commit(_ text: String) {
+        print(text)
         preedit = nil
         guard let focused, let handler = handlers[focused], !text.isEmpty else { return }
         handler.insert(text)
@@ -74,6 +75,7 @@ public final class TextInput {
     }
 
     public func setPreedit(_ text: String, cursorBegin: Int, cursorEnd: Int) {
+        print("text: \(text)")
 
         if text.isEmpty {
             preedit = nil
@@ -93,7 +95,8 @@ public final class TextInput {
 
     @discardableResult
     public func key(_ code: UInt32, modifiers: UInt32, pressed: Bool, isRepeat: Bool) -> Bool {
-
+        print("key code: \(code)")
+        
         guard pressed else { return false }
         guard let focused, let handler = handlers[focused] else { return false }
         let handled = handler.key(code, modifiers)

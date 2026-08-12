@@ -40,8 +40,8 @@ final class TextFieldRegistry {
 
 enum TextFieldMetrics {
     static let height: Float = 44
-    static let cornerRadius: Float = 10
-    static let insets = EdgeInsets(top: 0, bottom: 0, leading: 12, trailing: 12)
+    static let cornerRadius: Float = -1
+    static let insets = EdgeInsets(top: 2, bottom: 0, leading: 20, trailing: 20)
 
     static let caretWidth: Float = 2
 
@@ -133,10 +133,14 @@ public struct TextField: View {
 
         case .enter:
             onSubmit?()
+            TextInput.shared.resignFocus()
 
         case .escape:
             TextInput.shared.resignFocus()
-
+        case .unicode(let code):
+            if let scalar = UnicodeScalar(code) {
+                insert(String(scalar), into: state)
+            }
         default:
 
             return false
@@ -156,20 +160,26 @@ public struct TextField: View {
 
         let field = ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: TextFieldMetrics.cornerRadius)
-                .fill(.fill)
+                .fill(.surface)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if value.isEmpty && preedit.isEmpty && !isFocused {
-                Text(placeholder)
-                    .font(font)
-                    .foregroundColor(.placeholder)
-                    .lineLimit(1)
+                HStack {
+                    Text(placeholder)
+                        .font(font)
+                        .foregroundColor(.placeholder)
+                        .lineLimit(1)
+                    
+                    Spacer()
+                }
+                .padding(TextFieldMetrics.insets)
             } else {
                 content(value: value, preedit: preedit, state: state, isFocused: isFocused)
+                    .padding(TextFieldMetrics.insets)
             }
         }
-        .padding(TextFieldMetrics.insets)
         .frame(height: TextFieldMetrics.height, maxWidth: .infinity, alignment: .leading)
+        .nodeID(id)
         // TODO: put the caret where the tap was. Needs glyph positions back from
         // the renderer; nothing reports them yet, so it goes to the end.
         .onTap { _ in
@@ -187,9 +197,7 @@ public struct TextField: View {
             }
         )
 
-        var node = field.toSFNode()
-        node.node_id = id
-        return node
+        return field.toSFNode()
     }
 
     private func content(
@@ -222,6 +230,7 @@ public struct TextField: View {
                         width: TextFieldMetrics.caretWidth,
                         height: font.size * TextFieldMetrics.caretHeightRatio
                     )
+                    .offset(y: -TextFieldMetrics.insets.top)
             } else {
 
                 Spacer().frame(width: TextFieldMetrics.caretWidth)
@@ -231,5 +240,25 @@ public struct TextField: View {
 
             Spacer()
         }
+    }
+}
+
+struct NodeIdentity<Content: View>: View {
+    typealias Body = Never
+    var body: Never { fatalError() }
+
+    let content: Content
+    let id: UInt32
+
+    func toSFNode() -> SFNode {
+        var node = content.toSFNode()
+        node.node_id = id
+        return node
+    }
+}
+
+extension View {
+    func nodeID(_ id: UInt32) -> NodeIdentity<Self> {
+        NodeIdentity(content: self, id: id)
     }
 }

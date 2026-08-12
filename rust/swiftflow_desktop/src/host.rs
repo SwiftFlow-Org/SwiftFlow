@@ -8,11 +8,15 @@ use std::ffi::CString;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
+use winit::dpi::LogicalPosition;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, Ime, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
+
+#[cfg(target_os = "macos")]
+use winit::platform::macos::WindowAttributesExtMacOS;
 
 const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
@@ -37,10 +41,10 @@ pub struct DesktopApp {
 impl DesktopApp {
     pub fn new(
         title: String,
-        width: f32,
-        height: f32,
-        min_width: f32,
-        min_height: f32,
+        width: f64,
+        height: f64,
+        min_width: f64,
+        min_height: f64,
         callbacks: SFDesktopCallbacks,
     ) -> Self {
         Self {
@@ -88,11 +92,11 @@ impl ApplicationHandler for DesktopApp {
 
         let mut attributes = Window::default_attributes()
             .with_title(&self.title)
-            .with_inner_size(LogicalSize::new(self.width, self.height));
+            .with_inner_size(LogicalSize::new(self.logical_size.0, self.logical_size.1));
 
-        if self.min_width > 0.0 && self.min_height > 0.0 {
+        if self.min_size.0 > 0.0 && self.min_size.1 > 0.0 {
             attributes =
-                attributes.with_min_inner_size(LogicalSize::new(self.min_width, self.min_height));
+                attributes.with_min_inner_size(LogicalSize::new(self.min_size.0, self.min_size.1));
         }
 
         #[cfg(target_os = "macos")]
@@ -109,6 +113,10 @@ impl ApplicationHandler for DesktopApp {
                 .create_window(attributes)
                 .expect("could not create the platform window"),
         );
+
+        println!("Offsetting traffic lights on macos.");
+        #[cfg(target_os = "macos")]
+        crate::macos::set_traffic_light_inset(&window, 20.0, 20.0);
 
         let size = window.inner_size();
 

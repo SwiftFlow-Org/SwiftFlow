@@ -2,6 +2,9 @@ mod host;
 pub mod input;
 pub mod text_input;
 
+#[cfg(target_os = "macos")]
+mod macos;
+
 use std::ffi::{c_char, CStr};
 use winit::event_loop::EventLoop;
 
@@ -62,7 +65,12 @@ pub extern "C" fn sf_desktop_set_ime_cursor_area(x: f32, y: f32, width: f32, hei
 }
 
 #[no_mangle]
-pub extern "C" fn sf_desktop_run(config: SFDesktopConfig, callbacks: SFDesktopCallbacks) {
+pub extern "C" fn sf_desktop_run(
+    config: *const SFDesktopConfig,
+    callbacks: *const SFDesktopCallbacks,
+) {
+    let config = unsafe { &*config };
+    let callbacks = unsafe { *callbacks };
     let title = if config.title.is_null() {
         "SwiftFlow".to_string()
     } else {

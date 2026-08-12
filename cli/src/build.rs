@@ -55,7 +55,6 @@ impl Build {
         if let Some(api) = api {
             match ndk_clangxx(triple, api) {
                 Some(compiler) => {
-
                     let underscored = triple.replace('-', "_");
                     cargo = cargo
                         .env(format!("CXX_{underscored}"), &compiler)
@@ -100,9 +99,7 @@ impl Build {
     }
 
     fn check_exports(&self, archive: &Path, package: &str) -> Result<(), String> {
-        let header = self
-            .framework
-            .join("Sources/CSwiftFlow/SwiftFlowMetal.h");
+        let header = self.framework.join("Sources/CSwiftFlow/SwiftFlowMetal.h");
         let source = match std::fs::read_to_string(&header) {
             Ok(source) => source,
             Err(_) => return Ok(()),
@@ -131,7 +128,11 @@ impl Build {
              those functions existed. Delete it\n  and build again:\n\n    \
              rm -rf {}\n",
             header.display(),
-            if missing.len() == 1 { "a function" } else { "functions" },
+            if missing.len() == 1 {
+                "a function"
+            } else {
+                "functions"
+            },
             archive.display(),
             missing
                 .iter()
@@ -153,7 +154,14 @@ impl Build {
         if !binary.is_file() {
             println!("▶ Building sf-assets (first run)...");
             Run::new("cargo")
-                .args(["build", "--release", "-p", "swiftflow_assets", "--bin", "sf-assets"])
+                .args([
+                    "build",
+                    "--release",
+                    "-p",
+                    "swiftflow_assets",
+                    "--bin",
+                    "sf-assets",
+                ])
                 .current_dir(&tools)
                 .run()?;
         }
@@ -181,10 +189,32 @@ impl Build {
             .env("SWIFTFLOW_HOME", &self.home)
     }
 
+    fn force_relink(&self, archive: &Path) -> Result<(), String> {
+        let modified = std::fs::metadata(archive)
+            .and_then(|m| m.modified())
+            .map_err(|e| format!("{}: {e}", archive.display()))?
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("{}: {e}", archive.display()))?
+            .as_nanos()
+            .to_string();
+
+        let stamp = self.project.root.join(".build/swiftflow-rust-stamp");
+        if std::fs::read_to_string(&stamp).ok().as_deref() == Some(modified.as_str()) {
+            return Ok(());
+        }
+
+        touch_swift_sources(&self.project.root.join("Sources").join(self.app_name()))?;
+        if let Some(dir) = stamp.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        std::fs::write(&stamp, modified).map_err(|e| format!("{}: {e}", stamp.display()))
+    }
+
     fn desktop(&self) -> Result<(), String> {
         let triple = host_triple()?;
         let lib_dir = self.build_rust("swiftflow_desktop", &triple)?;
         self.flatten_assets()?;
+        self.force_relink(&lib_dir.join("libswiftflow_desktop.a"))?;
 
         println!("▶ Building and running the app...");
 
@@ -218,7 +248,10 @@ impl Build {
             .current_dir(&self.project.root)
             .run()?;
 
-        if let Some(target) = std::env::var("SWIFTFLOW_IOS_LAUNCH_ID").ok().filter(|v| !v.is_empty()) {
+        if let Some(target) = std::env::var("SWIFTFLOW_IOS_LAUNCH_ID")
+            .ok()
+            .filter(|v| !v.is_empty())
+        {
             if exists("pymobiledevice3") {
                 Run::new("pymobiledevice3")
                     .args(["developer", "dvt", "launch", "--stream", &target])
@@ -231,7 +264,10 @@ impl Build {
     fn android(&self) -> Result<(), String> {
         let abi = env_or("SWIFTFLOW_ANDROID_ABI", "arm64-v8a");
 
-        let api = match std::env::var("SWIFTFLOW_ANDROID_API").ok().filter(|v| !v.is_empty()) {
+        let api = match std::env::var("SWIFTFLOW_ANDROID_API")
+            .ok()
+            .filter(|v| !v.is_empty())
+        {
             Some(explicit) => explicit,
             None => self
                 .project
@@ -259,7 +295,6 @@ impl Build {
         };
 
         if abi == "x86_64" {
-
             println!("ℹ x86_64 build — for an emulator. SwiftFlow needs Vulkan, so use an");
             println!("  API 33+ system image with hardware acceleration; a software-GL AVD");
             println!("  will start and render nothing.");
@@ -273,7 +308,8 @@ impl Build {
 
         if let Some(assets) = self.flatten_assets()? {
             let apk_assets = gradle_dir.join("app/src/main/assets");
-            std::fs::create_dir_all(&apk_assets).map_err(|e| format!("{}: {e}", apk_assets.display()))?;
+            std::fs::create_dir_all(&apk_assets)
+                .map_err(|e| format!("{}: {e}", apk_assets.display()))?;
 
             for entry in std::fs::read_dir(&assets).into_iter().flatten().flatten() {
                 let path = entry.path();
@@ -321,8 +357,13 @@ impl Build {
             return Ok(owned);
         }
         let generated = self.project.root.join(".build").join("android");
-        GradleProject::resolve(&self.project.root, self.app_name(), api, &self.project.config)
-            .write(&generated)?;
+        GradleProject::resolve(
+            &self.project.root,
+            self.app_name(),
+            api,
+            &self.project.config,
+        )
+        .write(&generated)?;
         Ok(generated)
     }
 
@@ -464,7 +505,10 @@ impl Build {
         }
 
         if !exists("adb") {
-            println!("✓ Built {} (adb not on PATH, so not installing)", apk.display());
+            println!(
+                "✓ Built {} (adb not on PATH, so not installing)",
+                apk.display()
+            );
             return Ok(());
         }
 
@@ -535,7 +579,6 @@ fn declared_symbols(header: &str, package: &str) -> Vec<String> {
     ];
     let mut found = Vec::new();
     for line in header.lines() {
-
         if line.is_empty()
             || line.starts_with([' ', '\t'])
             || line.starts_with("//")
@@ -545,7 +588,9 @@ fn declared_symbols(header: &str, package: &str) -> Vec<String> {
         {
             continue;
         }
-        let Some(start) = line.find("sf_") else { continue };
+        let Some(start) = line.find("sf_") else {
+            continue;
+        };
         let name: String = line[start..]
             .chars()
             .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
@@ -578,7 +623,10 @@ fn defines(listing: &str, symbol: &str) -> bool {
 }
 
 fn host_triple() -> Result<String, String> {
-    if let Some(explicit) = std::env::var("SWIFTFLOW_RUST_TRIPLE").ok().filter(|v| !v.is_empty()) {
+    if let Some(explicit) = std::env::var("SWIFTFLOW_RUST_TRIPLE")
+        .ok()
+        .filter(|v| !v.is_empty())
+    {
         return Ok(explicit);
     }
     let triple = if cfg!(target_os = "macos") {
@@ -615,7 +663,6 @@ fn touch_swift_sources(dir: &Path) -> Result<(), String> {
     {
         let path = entry.path();
         if path.extension().is_some_and(|e| e == "swift") {
-
             let contents = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             std::fs::write(&path, contents).map_err(|e| format!("{}: {e}", path.display()))?;
         }
@@ -659,7 +706,6 @@ fn installed_bundles() -> Vec<PathBuf> {
 fn installed_triples() -> Vec<String> {
     let mut triples = Vec::new();
     for bundle in installed_bundles() {
-
         for json in find(&bundle, 3, &|p| p.extension().is_some_and(|e| e == "json")) {
             if let Ok(text) = std::fs::read_to_string(&json) {
                 for token in text.split(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_')) {
@@ -691,12 +737,14 @@ fn check_android_sdk(gradle_dir: &Path) -> Result<(), String> {
             return Ok(());
         }
     }
-    Err("No Android SDK. Gradle needs one; the Swift SDK's NDK is not it.\n\n  \
+    Err(
+        "No Android SDK. Gradle needs one; the Swift SDK's NDK is not it.\n\n  \
          If Android Studio is installed:\n    \
          export ANDROID_HOME=\"$HOME/Library/Android/sdk\"\n\n  \
          Otherwise install the command-line tools, then:\n    \
          sdkmanager \"platforms;android-34\" \"build-tools;34.0.0\""
-        .into())
+            .into(),
+    )
 }
 
 fn check_swift_sdk(swift_sdk: &str) -> Result<(), String> {
@@ -706,7 +754,10 @@ fn check_swift_sdk(swift_sdk: &str) -> Result<(), String> {
 
     let bundles = installed_bundles();
     if bundles.is_empty() {
-        let stores: Vec<String> = sdk_stores().iter().map(|p| format!("    {}", p.display())).collect();
+        let stores: Vec<String> = sdk_stores()
+            .iter()
+            .map(|p| format!("    {}", p.display()))
+            .collect();
         return Err(format!(
             "No Swift SDK installed — nothing in:\n{}\n\n  \
              To install the official Android SDK (swift.org publishes API 28):\n\n    \
@@ -741,8 +792,14 @@ fn check_toolchain_match() -> Result<(), String> {
         Ok(text) => text,
         Err(_) => return Ok(()),
     };
-    let host = match output.split_whitespace().skip_while(|w| *w != "version").nth(1) {
-        Some(v) => v.trim_end_matches(|c: char| !c.is_ascii_digit()).to_string(),
+    let host = match output
+        .split_whitespace()
+        .skip_while(|w| *w != "version")
+        .nth(1)
+    {
+        Some(v) => v
+            .trim_end_matches(|c: char| !c.is_ascii_digit())
+            .to_string(),
         None => return Ok(()),
     };
     if host.is_empty() {
@@ -751,7 +808,10 @@ fn check_toolchain_match() -> Result<(), String> {
 
     let mut mismatch = None;
     for bundle in installed_bundles() {
-        let name = bundle.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = bundle
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         if !name.contains("android") {
             continue;
         }
@@ -804,7 +864,9 @@ fn check_ndk_sysroot() -> Result<(), String> {
         needs_setup = Some(bundle);
     }
 
-    let Some(bundle) = needs_setup else { return Ok(()) };
+    let Some(bundle) = needs_setup else {
+        return Ok(());
+    };
     let ndk_set = std::env::var("ANDROID_NDK_HOME").is_ok();
     let steps = if ndk_set {
         "  ./scripts/setup-android-sdk.sh        # ANDROID_NDK_HOME is already set".to_string()
@@ -942,7 +1004,6 @@ mod tests {
 
     #[test]
     fn touching_sources_preserves_them_exactly() {
-
         let tmp = std::env::temp_dir().join(format!("sf-touch-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
         let file = tmp.join("A.swift");
@@ -962,7 +1023,6 @@ mod tests {
 
     #[test]
     fn env_or_ignores_an_exported_empty_value() {
-
         std::env::set_var("SF_TEST_EMPTY", "");
         assert_eq!(env_or("SF_TEST_EMPTY", "arm64-v8a"), "arm64-v8a");
         std::env::set_var("SF_TEST_EMPTY", "x86_64");
@@ -975,10 +1035,18 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("sf-main-{}", std::process::id()));
         let src = tmp.join("Nested");
         std::fs::create_dir_all(&src).unwrap();
-        std::fs::write(src.join("App.swift"), "import SwiftFlow\n\n@main\nstruct DemoApp: SwiftFlowApp {\n}\n").unwrap();
+        std::fs::write(
+            src.join("App.swift"),
+            "import SwiftFlow\n\n@main\nstruct DemoApp: SwiftFlowApp {\n}\n",
+        )
+        .unwrap();
         assert_eq!(main_type(&tmp).as_deref(), Some("DemoApp"));
 
-        std::fs::write(src.join("App.swift"), "@main\npublic struct Demo_2: SwiftFlowApp {}\n").unwrap();
+        std::fs::write(
+            src.join("App.swift"),
+            "@main\npublic struct Demo_2: SwiftFlowApp {}\n",
+        )
+        .unwrap();
         assert_eq!(main_type(&tmp).as_deref(), Some("Demo_2"));
 
         std::fs::write(src.join("App.swift"), "@main\n@MainActor\nenum Tool {}\n").unwrap();
@@ -993,8 +1061,7 @@ mod tests {
         // `sf_android_main` and `swiftflow_android_main`, which links on
         // neither platform and fails only when someone builds for Android.
         let host = std::fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("rust/swiftflow_android/src/lib.rs"),
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("rust/swiftflow_android/src/lib.rs"),
         )
         .unwrap();
         assert!(
@@ -1030,7 +1097,6 @@ void sf_android_run(void* app);
 
     #[test]
     fn a_declaration_that_wraps_its_parameters_is_still_found() {
-
         let header = "\
 size_t sf_hit_test_path(
     const SFNode* root,
@@ -1038,7 +1104,10 @@ size_t sf_hit_test_path(
     float y
 );
 ";
-        assert_eq!(declared_symbols(header, "swiftflow_wgpu"), ["sf_hit_test_path"]);
+        assert_eq!(
+            declared_symbols(header, "swiftflow_wgpu"),
+            ["sf_hit_test_path"]
+        );
     }
 
     #[test]
@@ -1062,7 +1131,6 @@ void sf_android_run(void* app);
 
     #[test]
     fn the_real_header_declares_what_the_workspace_defines() {
-
         let header = std::fs::read_to_string(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("Sources/CSwiftFlow/SwiftFlowMetal.h"),
         )
@@ -1084,12 +1152,20 @@ void sf_android_run(void* app);
     #[test]
     fn a_built_desktop_archive_satisfies_the_header() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let header = std::fs::read_to_string(root.join("Sources/CSwiftFlow/SwiftFlowMetal.h"))
-            .unwrap();
-        let archive = ["release", "x86_64-unknown-linux-gnu/release", "aarch64-apple-darwin/release"]
-            .iter()
-            .map(|d| root.join("rust/target").join(d).join("libswiftflow_desktop.a"))
-            .find(|p| p.is_file());
+        let header =
+            std::fs::read_to_string(root.join("Sources/CSwiftFlow/SwiftFlowMetal.h")).unwrap();
+        let archive = [
+            "release",
+            "x86_64-unknown-linux-gnu/release",
+            "aarch64-apple-darwin/release",
+        ]
+        .iter()
+        .map(|d| {
+            root.join("rust/target")
+                .join(d)
+                .join("libswiftflow_desktop.a")
+        })
+        .find(|p| p.is_file());
         let Some(archive) = archive else { return };
         let Ok(listing) = Run::new("nm").arg("-g").arg(&archive).capture() else {
             return;
@@ -1107,7 +1183,6 @@ void sf_android_run(void* app);
 
     #[test]
     fn nm_output_is_read_for_definitions_not_references() {
-
         let mach = "0000000000000000 T _sf_get_node_frame\n                 U _sf_missing\n";
         let elf = "0000000000000000 T sf_get_node_frame\n                 U sf_missing\n";
         for listing in [mach, elf] {

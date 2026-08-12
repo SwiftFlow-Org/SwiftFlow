@@ -216,6 +216,7 @@ public struct SwipeActionsModifier<Content: View>: View {
                         cornerRadius: SwipeMetrics.liftCornerRadius * state.lift
                     )
                     .fill(Color.fill.opacity(state.lift))
+                    .mergeable(false)
                 )
                 .offset(x: state.offset)
                 .gesture(gesture)
@@ -275,6 +276,7 @@ struct SwipeActionButton: View {
                 RoundedRectangle(cornerRadius: SwipeMetrics.cornerRadius)
                     .fill(action.tint)
                     .specular()
+                    .mergeable(false)
             )
 
             .scale(0.6 + 0.4 * revealed)

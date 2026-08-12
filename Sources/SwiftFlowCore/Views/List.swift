@@ -174,7 +174,6 @@ public struct List<Rows: View>: View {
     }
 
     public var body: some View {
-
         ScrollView(.vertical, fileID: fileID, line: line, column: column) { geometry in
             rows(geometry, metrics)
         }

@@ -14,6 +14,7 @@ pub const SF_KEY_HOME: u32 = 10;
 pub const SF_KEY_END: u32 = 11;
 pub const SF_KEY_PAGE_UP: u32 = 12;
 pub const SF_KEY_PAGE_DOWN: u32 = 13;
+pub const SF_KEY_SPACE: u32 = 14;
 
 pub const SF_MOD_SHIFT: u32 = 1 << 0;
 pub const SF_MOD_CONTROL: u32 = 1 << 1;
@@ -21,26 +22,41 @@ pub const SF_MOD_ALT: u32 = 1 << 2;
 pub const SF_MOD_SUPER: u32 = 1 << 3;
 
 pub fn map_key(key: &Key) -> u32 {
-    let Key::Named(named) = key else {
-        return SF_KEY_OTHER;
-    };
-    match named {
-        NamedKey::Backspace => SF_KEY_BACKSPACE,
-        NamedKey::Delete => SF_KEY_DELETE,
-        NamedKey::Enter => SF_KEY_ENTER,
-        NamedKey::Tab => SF_KEY_TAB,
-        NamedKey::Escape => SF_KEY_ESCAPE,
-        NamedKey::ArrowLeft => SF_KEY_LEFT,
-        NamedKey::ArrowRight => SF_KEY_RIGHT,
-        NamedKey::ArrowUp => SF_KEY_UP,
-        NamedKey::ArrowDown => SF_KEY_DOWN,
-        NamedKey::Home => SF_KEY_HOME,
-        NamedKey::End => SF_KEY_END,
-        NamedKey::PageUp => SF_KEY_PAGE_UP,
-        NamedKey::PageDown => SF_KEY_PAGE_DOWN,
+    println!("[rust] Key: {:?}", key);
+    match key {
+        Key::Named(named) => {
+            return match named {
+                NamedKey::Backspace => SF_KEY_BACKSPACE,
+                NamedKey::Delete => SF_KEY_DELETE,
+                NamedKey::Enter => SF_KEY_ENTER,
+                NamedKey::Tab => SF_KEY_TAB,
+                NamedKey::Escape => SF_KEY_ESCAPE,
+                NamedKey::ArrowLeft => SF_KEY_LEFT,
+                NamedKey::ArrowRight => SF_KEY_RIGHT,
+                NamedKey::ArrowUp => SF_KEY_UP,
+                NamedKey::ArrowDown => SF_KEY_DOWN,
+                NamedKey::Home => SF_KEY_HOME,
+                NamedKey::End => SF_KEY_END,
+                NamedKey::PageUp => SF_KEY_PAGE_UP,
+                NamedKey::PageDown => SF_KEY_PAGE_DOWN,
+                NamedKey::Space => SF_KEY_SPACE,
 
-        _ => SF_KEY_OTHER,
-    }
+                _ => SF_KEY_OTHER,
+            }
+        }
+        Key::Character(smol_str) => {
+            println!("Char");
+            if let Some(first_char) = smol_str.chars().next() {
+                println!("[rust] Code: {:?}", first_char as u32);
+                return first_char as u32;
+            }
+            return SF_KEY_OTHER;
+        }
+        _ => {
+            return SF_KEY_OTHER;
+        }
+    };
+    return SF_KEY_OTHER;
 }
 
 pub fn modifier_mask(state: ModifiersState) -> u32 {
@@ -113,7 +129,6 @@ mod tests {
 
     #[test]
     fn printable_keys_are_not_reported() {
-
         assert_eq!(map_key(&Key::Character(SmolStr::new("a"))), SF_KEY_OTHER);
         assert_eq!(map_key(&Key::Character(SmolStr::new("é"))), SF_KEY_OTHER);
         assert_eq!(map_key(&Key::Named(NamedKey::Space)), SF_KEY_OTHER);
@@ -138,7 +153,6 @@ mod tests {
 
     #[test]
     fn ime_allowed_is_reported_once_per_change() {
-
         let _ = take_ime_allowed();
         assert_eq!(take_ime_allowed(), None);
         request_ime_allowed(true);

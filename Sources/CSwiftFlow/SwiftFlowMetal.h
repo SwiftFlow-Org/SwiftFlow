@@ -287,7 +287,7 @@ typedef struct {
     void (*imeEnabled)(uint32_t enabled);
 } SFDesktopCallbacks;
 
-void sf_desktop_run(SFDesktopConfig config, SFDesktopCallbacks callbacks);
+void sf_desktop_run(const SFDesktopConfig* config, const SFDesktopCallbacks* callbacks);
 
 void sf_desktop_set_ime_allowed(uint32_t allowed);
 

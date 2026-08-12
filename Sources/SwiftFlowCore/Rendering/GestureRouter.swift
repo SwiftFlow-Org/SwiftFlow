@@ -52,6 +52,14 @@ public final class GestureRouter {
         GestureRegistry.shared.presses.values.contains { !$0.fired }
     }
 
+    /// Where a point sits inside `node`, in points. Falls back to window
+    /// space for a node whose frame hasn't been read back yet.
+    private func local(_ x: Float, _ y: Float, in node: UInt32, scale: Float) -> Point {
+        let point = Point(x: x / scale, y: y / scale)
+        guard let frame = NodeFrames.shared.frame(for: node)?.inPoints() else { return point }
+        return Point(x: point.x - frame.x, y: point.y - frame.y)
+    }
+
     public func pointerDown(
         x: Float, y: Float, t: Double, path: [UInt32], scrolls: [ScrollCandidate]
     ) {
@@ -130,7 +138,7 @@ public final class GestureRouter {
         }
 
         if press.phase == .drag, let gesture = registry.drags[press.dragNode] {
-            let value = makeValue(press, x: x, y: y, scale: scale)
+            let value = makeValue(press, x: x, y: y, scale: scale, node: press.dragNode)
             registry.dragValues[gesture.id] = value
             gesture.changed?(value)
             NodeRegistry.shared.needsRender = true
@@ -220,7 +228,7 @@ public final class GestureRouter {
         let registry = GestureRegistry.shared
 
         if press.phase == .drag, let gesture = registry.drags[press.dragNode] {
-            let value = makeValue(press, x: x, y: y, scale: scale)
+            let value = makeValue(press, x: x, y: y, scale: scale, node: press.dragNode)
             registry.dragValues.removeValue(forKey: gesture.id)
             gesture.ended?(value)
             NodeRegistry.shared.needsRender = true
@@ -297,16 +305,18 @@ public final class GestureRouter {
         NodeRegistry.shared.triggerTap(node)
 
         if let handler = GestureRegistry.shared.taps[node], handler.count == tapCount {
-            handler.action(Point(x: x / scale, y: y / scale))
+            handler.action(local(x, y, in: node, scale: scale))
 
             tapCount = 0
         }
     }
 
-    private func makeValue(_ press: Press, x: Float, y: Float, scale: Float) -> DragValue {
+    private func makeValue(
+        _ press: Press, x: Float, y: Float, scale: Float, node: UInt32
+    ) -> DragValue {
         DragValue(
-            startLocation: Point(x: press.startX / scale, y: press.startY / scale),
-            location: Point(x: x / scale, y: y / scale),
+            startLocation: local(press.startX, press.startY, in: node, scale: scale),
+            location: local(x, y, in: node, scale: scale),
             translation: Point(
                 x: (x - press.startX) / scale,
                 y: (y - press.startY) / scale

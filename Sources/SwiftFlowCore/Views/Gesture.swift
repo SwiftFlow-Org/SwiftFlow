@@ -225,6 +225,8 @@ final class GestureRegistry {
     }
 
     func beginBuild() {
+        for id in taps.keys { NodeFrames.shared.register(id) }
+        for id in drags.keys { NodeFrames.shared.register(id) }
         drags.removeAll(keepingCapacity: true)
         longPresses.removeAll(keepingCapacity: true)
         taps.removeAll(keepingCapacity: true)
