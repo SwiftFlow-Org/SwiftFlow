@@ -28,7 +28,6 @@ pub fn layout(node: &mut SFNode, available: SFRect) {
         }
 
         SFNodeKind::Spacer => {
-
             node.frame = available;
         }
 
@@ -41,8 +40,7 @@ pub fn layout(node: &mut SFNode, available: SFRect) {
                 let scale = *crate::ffi::SCALE.lock().unwrap();
                 let physical_size = font_size * scale;
 
-                let max_width =
-                    available.width - node.padding.leading - node.padding.trailing;
+                let max_width = available.width - node.padding.leading - node.padding.trailing;
                 let (w, h) = crate::with_font_system(|fs| {
                     fs.measure_wrapped(
                         &content,
@@ -162,7 +160,6 @@ fn layout_stack(node: &mut SFNode, available: SFRect) {
 
     match node.axis {
         SFAxis::Vertical | SFAxis::Horizontal => {
-
             let resolved = resolve_frame(node, available);
             let constraint = SFRect::new(
                 available.x,
@@ -192,8 +189,7 @@ fn layout_stack(node: &mut SFNode, available: SFRect) {
             );
 
             if node.sizing_x == SFSizing::Hug || node.sizing_y == SFSizing::Hug {
-                let hugged =
-                    hug_frame(children, node.axis, node.spacing, node.padding, available);
+                let hugged = hug_frame(children, node.axis, node.spacing, node.padding, available);
                 node.frame = SFRect::new(
                     available.x,
                     available.y,
@@ -221,8 +217,7 @@ fn layout_stack(node: &mut SFNode, available: SFRect) {
             // their padding to the frame they already have, so a second pass doubles
             // it. Make those idempotent first.
             let defers = |c: &SFNode| {
-                (hugs_x && c.sizing_x == SFSizing::Fill)
-                    || (hugs_y && c.sizing_y == SFSizing::Fill)
+                (hugs_x && c.sizing_x == SFSizing::Fill) || (hugs_y && c.sizing_y == SFSizing::Fill)
             };
 
             for child in children.iter_mut() {
@@ -299,11 +294,9 @@ fn layout_children_linear(
     alignment: SFAlignment,
     main_axis_alignment: SFAlignment,
 ) {
-
     let distributes_weight = main_sizing != SFSizing::Hug;
     let flex_weight = |c: &SFNode| -> f32 {
         if c.kind == SFNodeKind::Spacer {
-
             c.weight.max(1.0)
         } else if distributes_weight {
             c.weight.max(0.0)
@@ -361,6 +354,14 @@ fn layout_children_linear(
             continue;
         }
         let share = share_of(child);
+        // Asking for a share of the leftover and then not filling it is never
+        // what the caller meant. Without this the box is widened to `share`
+        // below while the content inside stays at its natural size.
+        match axis {
+            SFAxis::Vertical => child.sizing_y = SFSizing::Fill,
+            SFAxis::Horizontal => child.sizing_x = SFSizing::Fill,
+            SFAxis::Depth => unreachable!(),
+        }
         let child_available = match axis {
             SFAxis::Vertical => SFRect::from_size(available.width, share),
             SFAxis::Horizontal => SFRect::from_size(share, available.height),
@@ -486,7 +487,10 @@ fn natural_extent(node: &SFNode, axis: SFAxis) -> f32 {
         _ => (node.padding.top, node.padding.bottom),
     };
     let inner = if node.axis == axis {
-        children.iter().map(|c| natural_extent(c, axis)).sum::<f32>()
+        children
+            .iter()
+            .map(|c| natural_extent(c, axis))
+            .sum::<f32>()
             + node.spacing * (children.len().saturating_sub(1)) as f32
     } else {
         children

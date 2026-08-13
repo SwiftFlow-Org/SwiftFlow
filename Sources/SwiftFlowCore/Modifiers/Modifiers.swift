@@ -502,26 +502,27 @@ public struct ExpandModifier<Content: View>: View {
     public typealias Body = Never
     public var body: Never { fatalError() }
     let content: Content
+    let axes: Axis.Set
 }
 
 extension ExpandModifier {
     public func toSFNode() -> SFNode {
-
         var node = content.toSFNode()
-        node.sizing = SF_SIZING_FILL
+        if axes.contains(.horizontal) { node.sizingX = SF_SIZING_FILL }
+        if axes.contains(.vertical) { node.sizingY = SF_SIZING_FILL }
         return node
     }
 }
 
 extension View {
 
-    /// Makes a container take the space its parent offers instead of hugging
-    /// its content.
+    /// Makes a container take the space its parent offers on the given axes
+    /// instead of hugging its content.
     ///
     /// Unlike `.frame(maxWidth:maxHeight:)`, which wraps this view in a filling
-    /// box and leaves it hugging, this sets the fill on the view itself — so
+    /// box and leaves it hugging, this sets the fill on the view itself, so
     /// `.weight(_:)` on its children has leftover space to divide.
-    public func expands() -> ExpandModifier<Self> {
-        ExpandModifier(content: self)
+    public func expands(_ axes: Axis.Set = .all) -> ExpandModifier<Self> {
+        ExpandModifier(content: self, axes: axes)
     }
 }

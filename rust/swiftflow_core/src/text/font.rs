@@ -27,7 +27,6 @@ struct GlyphEntry {
 
 #[derive(Copy, Clone, Debug)]
 pub struct GlyphInfo {
-
     pub uv_x: f32,
     pub uv_y: f32,
     pub uv_width: f32,
@@ -39,6 +38,7 @@ pub struct GlyphInfo {
     pub offset_y: f32,
     pub advance: f32,
     pub ascender: f32,
+    pub top: f32,
 }
 
 pub struct GlyphAccumulator {
@@ -144,9 +144,8 @@ impl FontSystem {
     }
 
     pub fn face_for_char(&self, c: char, weight: f32, family: SFFontFamily) -> Face<'_> {
-        let icon = || {
-            crate::icon::face_data_for(c, weight).and_then(|data| Face::parse(data, 0).ok())
-        };
+        let icon =
+            || crate::icon::face_data_for(c, weight).and_then(|data| Face::parse(data, 0).ok());
         if family == SFFontFamily::Icon {
             return icon().unwrap_or_else(|| self.face_for_weight(weight, SFFontFamily::Sans));
         }
@@ -157,13 +156,7 @@ impl FontSystem {
         icon().unwrap_or(own)
     }
 
-    pub fn ascender_for(
-        &self,
-        c: char,
-        font_size: f32,
-        weight: f32,
-        family: SFFontFamily,
-    ) -> f32 {
+    pub fn ascender_for(&self, c: char, font_size: f32, weight: f32, family: SFFontFamily) -> f32 {
         let face = self.face_for_char(c, weight, family);
         let upem = face.units_per_em() as f32;
         if upem <= 0.0 {
@@ -194,7 +187,6 @@ impl FontSystem {
         weight: f32,
         family: SFFontFamily,
     ) -> f32 {
-
         if crate::icon::is_icon(left) || crate::icon::is_icon(right) {
             return 0.0;
         }
@@ -266,12 +258,12 @@ impl FontSystem {
 
         let cap = self
             .glyph('H', font_size, weight, family)
-            .map(|g| g.height)
+            .map(|g| g.top)
             .unwrap_or(0.0);
-        let height = cap + self.descent(font_size, family);
+
+        let height = self.ascender(font_size, family) + self.descent(font_size, family);
 
         if height <= 0.0 {
-
             return (width, font_size * 1.2);
         }
         (width, height)
@@ -336,6 +328,7 @@ impl FontSystem {
                 offset_y: glyph_data.bbox_min[1] * scale_factor,
                 advance: glyph_data.advance * scale_factor,
                 ascender: glyph_data.bbox_max[1] * scale_factor,
+                top: glyph_data.bbox_max[1] * scale_factor,
             },
         );
         self.write_accum_to_atlas(key, glyph_w, glyph_h);
@@ -376,7 +369,6 @@ impl FontSystem {
     }
 
     fn refine_one(&mut self, key: GlyphKey, frame: u32) -> bool {
-
         if !self.atlas.glyphs.contains_key(&key) {
             return false;
         }
@@ -449,7 +441,6 @@ impl FontSystem {
     }
 
     fn write_accum_to_atlas(&mut self, key: GlyphKey, w: u32, h: u32) {
-
         if let Some(y) = self
             .atlas
             .glyphs
@@ -554,7 +545,6 @@ impl FontSystem {
         family: SFFontFamily,
         out: &mut Vec<String>,
     ) {
-
         if paragraph.is_empty() {
             out.push(String::new());
             return;
@@ -580,7 +570,9 @@ impl FontSystem {
                 for c in word.chars() {
                     let mut trial = chunk.clone();
                     trial.push(c);
-                    if !chunk.is_empty() && self.measure(&trial, font_size, weight, family).0 > max_width {
+                    if !chunk.is_empty()
+                        && self.measure(&trial, font_size, weight, family).0 > max_width
+                    {
                         out.push(std::mem::take(&mut chunk));
                     }
                     chunk.push(c);
@@ -606,7 +598,9 @@ impl FontSystem {
         loop {
             let mut candidate: String = chars.iter().collect();
             candidate.push(ELLIPSIS);
-            if chars.is_empty() || self.measure(&candidate, font_size, weight, family).0 <= max_width {
+            if chars.is_empty()
+                || self.measure(&candidate, font_size, weight, family).0 <= max_width
+            {
                 return candidate;
             }
             chars.pop();

@@ -18,6 +18,7 @@ public enum NodeBuilder {
         AnimationTransaction.endBuild()
         TransitionRegistry.shared.endBuild()
         ContentTransitionRegistry.shared.endBuild()
+        LifecycleRegistry.shared.endBuild()
         NodeRegistry.shared.pruneNodeAnimationStates()
         return root
     }
@@ -36,6 +37,7 @@ public enum NodeBuilder {
             GestureRegistry.shared.rekey(from: claimed, to: identity)
             NodeRegistry.shared.rekeyTap(from: claimed, to: identity)
             TextInput.shared.rekey(from: claimed, to: identity)
+            LifecycleRegistry.shared.rekey(from: claimed, to: identity)
         }
         node.node_id = identity
         BuildContext.shared.pop()

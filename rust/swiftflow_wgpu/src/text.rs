@@ -40,7 +40,6 @@ impl TextRenderer {
         globals_bgl: &wgpu::BindGroupLayout,
         format: wgpu::TextureFormat,
     ) -> Self {
-
         let atlas_size = 2048u32;
 
         let atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -206,7 +205,6 @@ impl TextRenderer {
     }
 
     pub fn read_atlas_debug(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Vec<u8> {
-
         let atlas_size = 2048u32;
         let bytes_per_row = atlas_size * 4;
 
@@ -296,20 +294,14 @@ impl TextRenderer {
                         * render_scale
             } else {
                 let font_ascender = with_font_system(|fs| fs.ascender(raster_size, family));
-                let ref_glyph =
-                    with_font_system(|fs| fs.glyph('H', raster_size, weight, family));
-                frame.y
-                    + ref_glyph
-                        .map(|g| g.height * render_scale)
-                        .unwrap_or(font_ascender * render_scale)
+                frame.y + font_ascender * render_scale
             };
             let mut cursor_x = frame.x;
 
             for c in content.chars() {
                 if c == ' ' {
-                    cursor_x += with_font_system(|fs| {
-                        fs.space_width(raster_size, weight, family)
-                    }) * render_scale;
+                    cursor_x += with_font_system(|fs| fs.space_width(raster_size, weight, family))
+                        * render_scale;
                     continue;
                 }
 
@@ -323,7 +315,7 @@ impl TextRenderer {
                 let advance = glyph.advance * render_scale;
 
                 let x = cursor_x + offset_x;
-                let y = baseline_y - render_h - offset_y;
+                let y = baseline_y - glyph.top * render_scale;
 
                 let uv = [glyph.uv_x, glyph.uv_y, glyph.uv_width, glyph.uv_height];
 
@@ -373,7 +365,6 @@ impl TextRenderer {
     }
 
     fn upload_atlas(&self, queue: &wgpu::Queue) {
-
         let atlas_size = 2048u32;
         let row_bytes = (atlas_size * 4) as usize;
 

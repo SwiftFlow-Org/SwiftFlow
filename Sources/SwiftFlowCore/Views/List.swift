@@ -18,6 +18,14 @@ struct ListMetrics {
     var separatorInset: Float { style.insetsSeparator ? insets.leading : 0 }
 }
 
+extension ListMetrics {
+    /// What a row is assumed to be before it has been measured: one line of
+    /// text plus this list's own chrome.
+    var estimatedRowHeight: Float {
+        insets.top + insets.bottom + (showsSeparators ? 1 : 0) + 22
+    }
+}
+
 struct ListRow<Content: View>: View {
     public typealias Body = Never
     public var body: Never { fatalError() }
@@ -86,7 +94,7 @@ public struct ListRows<Data: RandomAccessCollection, ID: Hashable, Row: View>: V
             offset: geometry.offset,
             viewportLength: geometry.viewportLength
         ) { index in
-            heights.height(for: rowIdentity(at: index))
+            heights.height(for: rowIdentity(at: index), fallback: metrics.estimatedRowHeight)
         }
         let start = data.index(data.startIndex, offsetBy: window.first)
         let end = data.index(start, offsetBy: window.count)

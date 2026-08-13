@@ -6,6 +6,18 @@ public enum Axis: Sendable {
     case horizontal
 }
 
+extension Axis {
+    /// One or both layout axes.
+    public struct Set: OptionSet, Sendable {
+        public let rawValue: Int
+        public init(rawValue: Int) { self.rawValue = rawValue }
+
+        public static let horizontal = Set(rawValue: 1 << 0)
+        public static let vertical = Set(rawValue: 1 << 1)
+        public static let all: Set = [.horizontal, .vertical]
+    }
+}
+
 /// A view that scrolls its content along one axis.
 ///
 /// A horizontal scroll view has to be told its height — its content decides
