@@ -95,8 +95,6 @@ public final class TextInput {
 
     @discardableResult
     public func key(_ code: UInt32, modifiers: UInt32, pressed: Bool, isRepeat: Bool) -> Bool {
-        print("key code: \(code)")
-        
         guard pressed else { return false }
         guard let focused, let handler = handlers[focused] else { return false }
         let handled = handler.key(code, modifiers)

@@ -293,6 +293,10 @@ void sf_desktop_set_ime_allowed(uint32_t allowed);
 
 void sf_desktop_set_ime_cursor_area(float x, float y, float width, float height);
 
+void sf_desktop_open_folder_dialog(void);
+
+const char *sf_desktop_take_picked_folder(void);
+
 typedef struct {
     uint32_t width;
     uint32_t height;

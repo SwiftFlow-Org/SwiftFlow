@@ -170,6 +170,12 @@ extension DesktopHost {
     @MainActor
     func run(title: String, width: Double, height: Double, min_width: Double, min_height: Double) {
 
+        FolderPicker.shared.requestOpen = { sf_desktop_open_folder_dialog() }
+        FolderPicker.shared.takePicked = {
+            guard let raw = sf_desktop_take_picked_folder() else { return nil }
+            return String(cString: raw)
+        }
+
         TextInput.shared.setIMEAllowed = { sf_desktop_set_ime_allowed($0 ? 1 : 0) }
         TextInput.shared.setIMECursorArea = { sf_desktop_set_ime_cursor_area($0, $1, $2, $3) }
 

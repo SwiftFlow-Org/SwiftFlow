@@ -1,3 +1,4 @@
+pub mod file_dialog;
 mod host;
 pub mod input;
 pub mod text_input;
@@ -92,4 +93,14 @@ pub extern "C" fn sf_desktop_run(
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("swiftflow: event loop exited with an error: {e}");
     }
+}
+
+#[no_mangle]
+pub extern "C" fn sf_desktop_open_folder_dialog() {
+    file_dialog::request_open_folder();
+}
+
+#[no_mangle]
+pub extern "C" fn sf_desktop_take_picked_folder() -> *const c_char {
+    file_dialog::take_picked()
 }

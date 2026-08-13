@@ -10,11 +10,14 @@ name = "swiftflow_desktop"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-objc2 = "0.6.4"
-objc2-app-kit = "0.3.2"
-objc2-foundation = "0.3.2"
 swiftflow_core = { path = "../swiftflow_core" }
 # Depended on as an rlib for `init_with_target` — the desktop host owns
 # its window, so it never needs the C surface-descriptor path.
 swiftflow_wgpu = { path = "../swiftflow_wgpu" }
 winit = "0.30"
+rfd = "0.15"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-app-kit = "0.3.2"
+objc2-foundation = "0.3.2"

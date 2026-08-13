@@ -1,3 +1,4 @@
+use crate::file_dialog;
 use crate::input::{
     safe_area_points, scroll_delta_pixels, LIFECYCLE_BACKGROUND, LIFECYCLE_FOREGROUND,
     LIFECYCLE_TERMINATE,
@@ -288,6 +289,16 @@ impl ApplicationHandler for DesktopApp {
                     winit::dpi::PhysicalPosition::new(x, y),
                     winit::dpi::PhysicalSize::new(w, h),
                 );
+            }
+            if file_dialog::take_request() {
+                // Blocks the event loop while the chooser is up. That's what a
+                // native modal does anyway, but rendering stops with it — so
+                // this belongs here and nowhere hot.
+                let picked = rfd::FileDialog::new()
+                    .set_title("Open Folder")
+                    .pick_folder()
+                    .map(|path| path.to_string_lossy().into_owned());
+                file_dialog::store_picked(picked);
             }
             window.request_redraw();
         }

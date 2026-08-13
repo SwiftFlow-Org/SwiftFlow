@@ -22,7 +22,6 @@ pub const SF_MOD_ALT: u32 = 1 << 2;
 pub const SF_MOD_SUPER: u32 = 1 << 3;
 
 pub fn map_key(key: &Key) -> u32 {
-    println!("[rust] Key: {:?}", key);
     match key {
         Key::Named(named) => {
             return match named {
@@ -45,9 +44,7 @@ pub fn map_key(key: &Key) -> u32 {
             }
         }
         Key::Character(smol_str) => {
-            println!("Char");
             if let Some(first_char) = smol_str.chars().next() {
-                println!("[rust] Code: {:?}", first_char as u32);
                 return first_char as u32;
             }
             return SF_KEY_OTHER;
