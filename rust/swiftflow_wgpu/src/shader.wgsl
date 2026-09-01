@@ -685,7 +685,19 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
 
     let screen = inst.frame.xy + in.uv * inst.frame.zw;
     let clip = clip_coverage(screen, inst.clip_rect, inst.clip_radii);
-    return vec4<f32>(color.rgb, color.a * clip);
+
+    // Straight alpha on the way out. Everything above is premultiplied by
+    // coverage, and the pipeline blends with ALPHA_BLENDING, which multiplies
+    // by it again — that second multiply is what darkens a half-covered edge
+    // pixel into a line. Invisible while the pane also faded out there;
+    // plainly a black hairline once it stopped.
+    // Straight alpha on the way out. Everything above is premultiplied by
+    // coverage, and the pipeline blends with ALPHA_BLENDING, which multiplies
+    // by it again — that second multiply is what darkens a half-covered edge
+    // pixel into a line. Invisible while the pane also faded out there;
+    // plainly a black hairline once it stopped.
+    let coverage = max(color.a, 0.0001);
+    return vec4<f32>(color.rgb / coverage, color.a * clip);
 }
 
 struct ImageGpu {
