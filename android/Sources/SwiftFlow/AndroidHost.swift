@@ -40,6 +40,7 @@ public final class AndroidHost {
     func frame(dt: Float) {
         guard let rootView else { return }
 
+        MainQueue.drain()
         ImageLoader.shared.drainPending()
 
         let anyScrollActive = NodeRegistry.shared.scrollStates.values.contains {
