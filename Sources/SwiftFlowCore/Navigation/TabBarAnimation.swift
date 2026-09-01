@@ -43,6 +43,7 @@ final class TabBarAnimator {
     private var naturalHeight: Float = 0
     private var naturalRow: Float = 0
     private var naturalAnchor: Float = 0
+    private var naturalItemHeight: Float = 0
 
     var isAnimating: Bool {
         travelling || popping || expanding || presence != presenceTarget
@@ -74,12 +75,11 @@ final class TabBarAnimator {
         guard let index else { return }
         let slot = Float(index)
 
-        // Mid-drag the finger owns the pill and the selection is what follows
-        // it, so the selection landing here says nothing new.
-        if dragging {
-            target = slot
-            return
-        }
+        // Mid-drag the finger owns the target and the selection follows it, so
+        // the selection landing here says nothing new. Writing the slot back
+        // would hand the pill an integer to chase and turn a smooth drag into
+        // a lurch between tabs.
+        if dragging { return }
 
         // A different number of tabs is a different bar. Land on the new
         // layout rather than fly across one that just moved underneath.
@@ -208,8 +208,9 @@ final class TabBarAnimator {
     func layout(measuring ids: [UInt32], group groupID: UInt32) -> TabBarLayout {
         let expansion = searchExpansion
         let atRest = TabBarLayout(
-            rowWidth: nil, groupWidth: nil, trailingWidth: TabBarMetrics.trailingDiameter,
-            contentOffset: 0, expansion: expansion
+            rowWidth: nil, groupWidth: nil, groupHeight: nil,
+            trailingWidth: TabBarMetrics.trailingDiameter,
+            contentOffset: 0, contentRise: 0, expansion: expansion
         )
 
         // At rest is the only moment the group's natural size is on offer, so
@@ -224,14 +225,19 @@ final class TabBarAnimator {
             if let row = rowGeometry(measuring: ids) {
                 naturalRow = row.width
                 naturalAnchor = row.anchorCentre
+                naturalItemHeight = row.itemHeight
             }
             return atRest
         }
 
-        // A collapsed group is a circle the height of the bar.
-        let collapsed = max(naturalHeight, TabBarMetrics.trailingDiameter)
+        // A circle, so the width it collapses to is its own height — and the
+        // height is pinned alongside it, since a box that is only told its
+        // width is at the mercy of whatever its content does on the way down.
+        let collapsed = naturalHeight
         let available = Screen.width - 2 * TabBarMetrics.horizontalPadding
-        guard naturalGroup > collapsed, available > naturalGroup else { return atRest }
+        guard collapsed > 0, naturalGroup > collapsed, available > naturalGroup else {
+            return atRest
+        }
 
         let trailing = TabBarMetrics.trailingDiameter
         let grown = max(trailing, available - TabBarMetrics.groupSpacing - collapsed)
@@ -243,16 +249,28 @@ final class TabBarAnimator {
         return TabBarLayout(
             rowWidth: naturalRow,
             groupWidth: naturalGroup + (collapsed - naturalGroup) * expansion,
+            groupHeight: naturalHeight,
             trailingWidth: trailing + (grown - trailing) * expansion,
             contentOffset: (centred - naturalAnchor) * expansion,
+            contentRise: iconRise * expansion,
             expansion: expansion
         )
+    }
+
+    /// How far the row has to come down for the anchor's *icon* to sit in the
+    /// middle of the circle, rather than its box. An item is an icon above a
+    /// label, so centring the box leaves the icon high by half the label.
+    private var iconRise: Float {
+        let iconCentre = TabBarMetrics.itemPaddingVertical + TabBarMetrics.iconSize / 2
+        return max(naturalItemHeight / 2 - iconCentre, 0)
     }
 
     /// The row as it stands: how wide it is, and where the anchor item — the
     /// tab the group keeps showing once it is a single circle — sits along
     /// it, measured from its leading edge.
-    private func rowGeometry(measuring ids: [UInt32]) -> (width: Float, anchorCentre: Float)? {
+    private func rowGeometry(
+        measuring ids: [UInt32]
+    ) -> (width: Float, anchorCentre: Float, itemHeight: Float)? {
         guard !ids.isEmpty else { return nil }
         let anchor = min(max(anchorSlot, 0), ids.count - 1)
         guard
@@ -263,7 +281,8 @@ final class TabBarAnimator {
 
         return (
             last.x + last.width - first.x,
-            box.x - first.x + box.width / 2
+            box.x - first.x + box.width / 2,
+            box.height
         )
     }
 
@@ -322,10 +341,17 @@ struct TabBarLayout {
     /// `nil` while the group is at its natural width, which is a hug and not
     /// a number.
     let groupWidth: Float?
+
+    /// Pinned as soon as the group starts closing, so the box the width is
+    /// racing toward cannot move underneath it.
+    let groupHeight: Float?
+
     let trailingWidth: Float
 
-    /// How far the row of items slides so the anchor ends up centred.
+    /// How far the row of items slides so the anchor ends up centred, across
+    /// and then down.
     let contentOffset: Float
+    let contentRise: Float
 
     let expansion: Float
 

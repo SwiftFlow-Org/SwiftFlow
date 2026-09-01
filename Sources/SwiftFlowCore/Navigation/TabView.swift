@@ -149,6 +149,11 @@ enum TabBarMetrics {
     static let iconSize: Float = 24
     static let horizontalPadding: Float = 20
 
+    /// What an item keeps around its icon and label. Named because the
+    /// collapse has to know where the icon sits inside the box.
+    static let itemPaddingVertical: Float = 9.5
+    static let itemPaddingHorizontal: Float = 17
+
     /// The gap between the group and a `role: .trailing` tab, and the ring of
     /// glass the group keeps around its items — the room the pill moves in.
     static let groupSpacing: Float = 12
@@ -199,6 +204,11 @@ enum TabBarMetrics {
     /// clips, so they have to be gone before the group closes past them.
     static let collapseFadeRate: Float = 5
 
+    /// What the trailing tab settles to once it is a search field. Shorter
+    /// than the circle it sits beside; raise it to `trailingDiameter` to have
+    /// the two match.
+    static let searchFieldHeight: Float = 48
+
     /// The gap between the search icon and its placeholder, and the margin
     /// the pair keeps inside the expanded field.
     static let searchSpacing: Float = 8
@@ -233,8 +243,8 @@ public struct TabView: View {
     let interactiveBack: Bool
 
     public init(
-        background: Material? = Material.ultraThinMaterial, //Material(blurRadius: 50, tint: .background, isProgressive: false),
-        navigationBackground: Material? = Material.ultraThinMaterial, //Material(blurRadius: 50, tint: .background, isProgressive: true),
+        background: Material? = Material(blurRadius: 50, tint: .background, isProgressive: true),
+        navigationBackground: Material? = Material(blurRadius: 50, tint: .background, isProgressive: true),
         transition: NavTransition = .standard,
         screenBackground: Color = .background,
         interactiveBack: Bool = true,
@@ -332,7 +342,7 @@ struct TabBar: View {
                     )
                 }
             }
-            .offset(x: layout.contentOffset)
+            .offset(x: layout.contentOffset, y: layout.contentRise)
             .gesture(dragAcross(filtered, ids: ids))
             .background(
                 Capsule()
@@ -344,12 +354,15 @@ struct TabBar: View {
                     .animation(.easeInOut(), value: isDragging)
             )
             .frame(width: layout.rowWidth)
-            .padding(.vertical, TabBarMetrics.groupInset - (selected == searchTab?.index ? 4 : 0.0))
-            .padding(.horizontal, TabBarMetrics.groupInset - (selected == searchTab?.index ? 12 : 0.0))
+            .padding(.vertical, TabBarMetrics.groupInset)
+            .padding(.horizontal, TabBarMetrics.groupInset)
             // Measured before the width is forced, so what it reports stays
             // the natural one no matter how far the group has collapsed.
             .measured(as: TabBarMetrics.groupID)
-            .frame(width: layout.groupWidth)
+            // Both axes: a width alone would leave the height to whatever the
+            // content does as it fades, and the collapsed shape has to be a
+            // circle at the end of it.
+            .frame(width: layout.groupWidth, height: layout.groupHeight)
             .background(
                 Capsule()
                     .fill(.surface)
@@ -370,7 +383,15 @@ struct TabBar: View {
                     ),
                     tap: { self.activate(searchTab) }
                 )
-                .frame(width: layout.trailingWidth, height: searchTab.index == selected ? 48 : TabBarMetrics.trailingDiameter)
+                // Along the same ramp as the width, so the field grows and
+                // settles in one move instead of snapping the moment the
+                // selection lands on it.
+                .frame(
+                    width: layout.trailingWidth,
+                    height: TabBarMetrics.trailingDiameter
+                        + (TabBarMetrics.searchFieldHeight - TabBarMetrics.trailingDiameter)
+                        * layout.expansion
+                )
                 .background(
                     Capsule()
                         .fill(.surface)
@@ -382,8 +403,7 @@ struct TabBar: View {
         .padding(.horizontal, TabBarMetrics.horizontalPadding)
         .padding(.bottom, SafeArea.bottom)
         .frame(height: TabBarMetrics.contentInset, maxWidth: .infinity)
-        // TODO: Make it be flipped vertically
-        //.progressiveBlur(.hardMaterial, start: 0)
+        .progressiveBlur(Material(blurRadius: 50, tint: .background), toward: .top, start: 0)
     }
 
     /// Aims the pill at the selected item and tells the bar which shape it is
@@ -499,8 +519,8 @@ struct TabBarItem: View {
             // box is what the pill measures itself against, and measurement
             // reads through scale.
             .scale(isSelected ? 1 + TabBarAnimator.shared.pop : 1)
-            .padding(.vertical, 9.5 - (4.0 * (1.0 - labelOpacity)))
-            .padding(.horizontal, 17 - (12.0 * (1.0 - labelOpacity)))
+            .padding(.vertical, TabBarMetrics.itemPaddingVertical)
+            .padding(.horizontal, TabBarMetrics.itemPaddingHorizontal)
             // A clear layer the size of the item, which is where the pill
             // wants to land. The button's own node can't carry the id — the
             // enclosing `ForEach` relabels it with the row key.
