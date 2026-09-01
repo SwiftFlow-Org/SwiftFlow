@@ -45,3 +45,40 @@ public final class NodeFrames {
         fnv1a("morph:\(name)")
     }
 }
+
+/// Labels a node so the host measures it, without going through
+/// `NodeBuilder`.
+///
+/// `MatchedTransitionSource` gets its id assigned on the way out of
+/// `buildAny`, which only reaches a view's outermost node — anything nested
+/// inside a `ForEach` row loses to the row's own key. Writing the id here
+/// instead survives that, at the price of only working on a node that claims
+/// nothing of its own.
+struct MeasuredNode<Content: View>: View {
+    typealias Body = Never
+    var body: Never { fatalError() }
+
+    let content: Content
+    let identity: UInt32
+
+    func toSFNode() -> SFNode {
+        var node = content.toSFNode()
+
+        // Relabelling a node something has already registered against — a
+        // button's tap handler, say — would strand that registration on an id
+        // nothing carries. Measure nothing rather than break the tap.
+        guard node.node_id == 0 else { return node }
+
+        NodeFrames.shared.register(identity)
+        node.node_id = identity
+        return node
+    }
+}
+
+extension View {
+    /// Tracks this view's laid-out frame under `id`, readable on the next
+    /// build through `NodeFrames`.
+    func measured(as id: UInt32) -> MeasuredNode<Self> {
+        MeasuredNode(content: self, identity: id)
+    }
+}
