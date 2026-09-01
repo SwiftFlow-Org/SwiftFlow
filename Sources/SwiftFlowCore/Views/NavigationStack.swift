@@ -53,6 +53,7 @@ final class NavigationConfigStore {
     nonisolated(unsafe) private var pendingTitle: String?
     nonisolated(unsafe) private var pendingDisplayMode: NavigationBarTitleDisplayMode = .automatic
     nonisolated(unsafe) private var pendingItems: [ResolvedToolbarItem] = []
+    nonisolated(unsafe) private var pendingScrollID: UInt32?
 
     nonisolated(unsafe) private var depth: Int = 0
 
@@ -70,6 +71,7 @@ final class NavigationConfigStore {
         pendingTitle = nil
         pendingDisplayMode = .automatic
         pendingItems = []
+        pendingScrollID = nil
         depth = 0
     }
 
@@ -89,9 +91,20 @@ final class NavigationConfigStore {
         }
     }
 
+    /// Same two-step as `setTitle`, and for the same reason: a screen's
+    /// content can be built before the collecting window opens — `NavStack`
+    /// wraps a layer in `AnyView`, which builds eagerly — and a registration
+    /// that arrives early has to wait rather than be dropped. Dropping it left
+    /// the bar with no scroll to watch, so a large title never collapsed and
+    /// sat still while the content slid under it.
     func registerScroll(_ id: UInt32, axis: Axis) {
-        guard isCollecting, scrollID == nil, axis == .vertical else { return }
-        scrollID = id
+        guard axis == .vertical else { return }
+
+        if isCollecting {
+            if scrollID == nil { scrollID = id }
+        } else if pendingScrollID == nil {
+            pendingScrollID = id
+        }
     }
 
     func beginCollecting() -> NavigationBarConfig {
@@ -99,10 +112,11 @@ final class NavigationConfigStore {
         title = pendingTitle
         displayMode = pendingDisplayMode
         items = pendingItems
-        scrollID = nil
+        scrollID = pendingScrollID
         pendingTitle = nil
         pendingDisplayMode = .automatic
         pendingItems = []
+        pendingScrollID = nil
         depth += 1
         return saved
     }
