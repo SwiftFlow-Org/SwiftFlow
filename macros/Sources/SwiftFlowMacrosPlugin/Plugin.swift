@@ -7,5 +7,6 @@ struct SwiftFlowMacrosPlugin: CompilerPlugin {
         ObservableMacro.self,
         ObservationTrackedMacro.self,
         ObservationIgnoredMacro.self,
+        PreviewMacro.self,
     ]
 }

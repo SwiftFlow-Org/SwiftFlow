@@ -45,6 +45,20 @@ enum Cmd {
         platform: Option<Platform>,
     },
 
+    Preview {
+        #[arg(long, short)]
+        platform: Option<Platform>,
+        /// Render headless into this transport file (mmap) instead of a window.
+        #[arg(long)]
+        offscreen: Option<String>,
+        #[arg(long, default_value_t = 360)]
+        width: u32,
+        #[arg(long, default_value_t = 640)]
+        height: u32,
+        #[arg(long, default_value_t = 2.0)]
+        scale: f32,
+    },
+
     Doctor,
 }
 
@@ -55,6 +69,8 @@ fn main() -> ExitCode {
         Cmd::New { name, pin, force } => cmd_new(&env, &name, pin.as_deref(), force),
         Cmd::Build { platform } => cmd_build(&env, platform, false),
         Cmd::Run { platform } => cmd_build(&env, platform, true),
+        Cmd::Preview { platform, offscreen, width, height, scale } =>
+            cmd_preview(&env, platform, offscreen, width, height, scale),
         Cmd::Doctor => cmd_doctor(&env),
     };
     match result {
@@ -175,6 +191,34 @@ fn cmd_build(env: &dyn Env, platform: Option<Platform>, run: bool) -> Result<(),
         run,
     }
     .go()
+}
+
+fn cmd_preview(
+    env: &dyn Env,
+    platform: Option<Platform>,
+    offscreen: Option<String>,
+    width: u32,
+    height: u32,
+    scale: f32,
+) -> Result<(), String> {
+    // Previews are a desktop-only host; default to desktop rather than the
+    // host's usual iOS default.
+    let r = resolve(env, Some(platform.unwrap_or(Platform::Desktop)))?;
+    println!("\u{25b6} Preview  {} (SwiftFlow {})", r.project.name, r.version);
+    let offscreen = offscreen.map(|transport| swiftflow_cli::build::OffscreenPreview {
+        transport: std::path::PathBuf::from(transport),
+        width,
+        height,
+        scale,
+    });
+    Build {
+        project: r.project,
+        framework: r.framework,
+        home: r.home,
+        platform: r.platform,
+        run: false,
+    }
+    .preview(offscreen)
 }
 
 fn cmd_doctor(env: &dyn Env) -> Result<(), String> {

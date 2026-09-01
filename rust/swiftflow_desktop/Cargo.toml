@@ -6,8 +6,12 @@ edition = "2021"
 [lib]
 name = "swiftflow_desktop"
 # staticlib for the Swift executable to link; rlib so the crate's own
-# tests can exercise the pure helpers.
-crate-type = ["staticlib", "rlib"]
+# tests can exercise the pure helpers; cdylib so the framework can be one
+# dynamic image in a process (the preview host and a views dylib must share
+# a single renderer — one wgpu, one NodeRegistry — rather than embed two
+# copies of the static archive). cargo fully links the cdylib, honouring
+# winit's and wgpu's own link directives directly.
+crate-type = ["staticlib", "rlib", "cdylib"]
 
 [dependencies]
 swiftflow_core = { path = "../swiftflow_core" }

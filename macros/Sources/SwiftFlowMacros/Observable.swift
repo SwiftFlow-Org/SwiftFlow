@@ -1,3 +1,10 @@
+// A local stand-in named `Observable` so `@Observable`'s
+// `@attached(extension, conformances: Observable)` type-checks without a
+// SwiftFlowCore dependency (which would raise this package's OS floor). At an
+// app's use site the generated `extension T: Observable {}` resolves to the
+// framework's Observable, reached through `import SwiftFlow`.
+protocol Observable: AnyObject {}
+
 @attached(member, names: named(_observationRegistrar))
 @attached(memberAttribute)
 @attached(extension, conformances: Observable)

@@ -4,6 +4,14 @@ use crate::gradle::GradleProject;
 use crate::proc::{exists, find, Run};
 use crate::{Platform, Project};
 
+/// Parameters for the headless preview the editor embeds.
+pub struct OffscreenPreview {
+    pub transport: PathBuf,
+    pub width: u32,
+    pub height: u32,
+    pub scale: f32,
+}
+
 pub struct Build {
     pub project: Project,
     pub framework: PathBuf,
@@ -31,11 +39,43 @@ impl Build {
     }
 
     pub fn go(&self) -> Result<(), String> {
+        self.index_previews()?;
         match self.platform {
             Platform::Desktop => self.desktop(),
             Platform::Ios => self.ios(),
             Platform::Android => self.android(),
         }
+    }
+
+    /// Scans the app's sources for `#Preview`s and writes the discovery index
+    /// into `.build/swiftflow-previews/`. Runs on every build so the index —
+    /// which `swiftflow preview` compiles into the preview host — is always
+    /// current. Prints what it found.
+    fn index_previews(&self) -> Result<(), String> {
+        let sources = self.project.root.join("Sources");
+        let previews = crate::previews::scan(&sources)?;
+        let out_dir = self.project.root.join(".build/swiftflow-previews");
+        crate::previews::write_index(&out_dir, &previews)?;
+
+        if previews.is_empty() {
+            return Ok(());
+        }
+        let names: Vec<&str> = previews.iter().map(|p| p.name.as_str()).collect();
+        println!(
+            "\u{25b6} {} preview{} found: {}",
+            previews.len(),
+            if previews.len() == 1 { "" } else { "s" },
+            names.join(", ")
+        );
+        // v1 limitation: the #Preview macro emits a fixed-named thunk, so a
+        // second preview in the same module is a redeclaration. Warn clearly
+        // rather than let the Swift error be the first the user sees.
+        if previews.len() > 1 {
+            println!(
+                "\u{26a0}\u{fe0f}  the preview system currently supports one #Preview per app; \n                    the rest will fail to compile until per-preview names are supported."
+            );
+        }
+        Ok(())
     }
 
     fn build_rust(&self, package: &str, triple: &str) -> Result<PathBuf, String> {
@@ -223,6 +263,134 @@ impl Build {
             .arg(verb)
             .current_dir(&self.project.root)
             .run()
+    }
+
+    /// `swiftflow preview` — build the preview host + a views dylib, open a
+    /// window rendering the previews, and live-reload it as the sources change.
+    pub fn preview(&self, offscreen: Option<OffscreenPreview>) -> Result<(), String> {
+        let triple = host_triple()?;
+        let lib_dir = self.build_rust("swiftflow_desktop", &triple)?;
+        self.flatten_assets()?;
+
+        let sources = self.project.root.join("Sources");
+        let previews = crate::previews::scan(&sources)?;
+        if previews.is_empty() {
+            return Err(format!(
+                "no #Preview found in {} — add one, e.g.\n  \
+                 #Preview(\"Name\") {{ ContentView() }}",
+                sources.display()
+            ));
+        }
+        let names: Vec<&str> = previews.iter().map(|p| p.name.as_str()).collect();
+        println!("\u{25b6} previewing: {}", names.join(", "));
+
+        let app_sources = sources.join(self.app_name());
+        let pkg_dir = self.project.root.join(".build/swiftflow-previews");
+        let has_assets = app_sources.join("Assets").is_dir();
+        crate::previews::write_preview_package(
+            &pkg_dir,
+            &app_sources,
+            &previews,
+            &self.framework.join("desktop"),
+            &self.framework.join("macros"),
+            has_assets,
+        )?;
+
+        let build_product = |product: &str| -> Result<(), String> {
+            self.swift_env(Run::new("swift"), &triple, &lib_dir)
+                .arg("build")
+                .arg("--package-path")
+                .arg(&pkg_dir)
+                .arg("--product")
+                .arg(product)
+                .run()
+        };
+
+        let host_product = if offscreen.is_some() { "PreviewOffscreenHost" } else { "PreviewHost" };
+        println!("\u{25b6} Building the preview host...");
+        // The views dylib is an orphan (the host dlopens it), so build it
+        // explicitly; the host is built once and never changes.
+        build_product("PreviewViews")?;
+        build_product(host_product)?;
+
+        let debug_dir = pkg_dir.join(".build/debug");
+        let built = debug_dir.join("libPreviewViews.dylib");
+        let host = debug_dir.join(host_product);
+        if !host.is_file() || !built.is_file() {
+            return Err(format!(
+                "the preview build produced no host or dylib\n  host:  {}\n  dylib: {}",
+                host.display(),
+                built.display()
+            ));
+        }
+
+        // The host watches this file for the dylib to show. Each rebuild is
+        // copied to a fresh filename (dlopen caches by path, and the old image
+        // stays mapped), and the new path written here atomically.
+        let current_file = pkg_dir.join("reload-current");
+        let stage = |seq: u64| -> Result<(), String> {
+            let dest = debug_dir.join(format!("PreviewViews-{seq}.dylib"));
+            std::fs::copy(&built, &dest).map_err(|e| format!("staging dylib: {e}"))?;
+            let tmp = pkg_dir.join("reload-current.tmp");
+            std::fs::write(&tmp, dest.to_string_lossy().as_bytes())
+                .map_err(|e| format!("writing reload file: {e}"))?;
+            std::fs::rename(&tmp, &current_file).map_err(|e| format!("swapping reload file: {e}"))
+        };
+        let mut seq = 0u64;
+        stage(seq)?;
+
+        let mut command = std::process::Command::new(&host);
+        command.arg(&current_file);
+        match &offscreen {
+            Some(off) => {
+                println!("\u{25b6} Rendering preview offscreen \u{2014} edits reload live.");
+                command
+                    .arg(&off.transport)
+                    .arg(off.width.to_string())
+                    .arg(off.height.to_string())
+                    .arg(off.scale.to_string());
+            }
+            None => {
+                println!(
+                    "\u{25b6} Opening preview window \u{2014} edits reload live; close the window to stop."
+                );
+            }
+        }
+        let mut child = command
+            .spawn()
+            .map_err(|e| format!("launching the preview host: {e}"))?;
+
+        // Watch the app's sources; on a save, rebuild the dylib and restage it.
+        // A build error is shown but not fatal — the window keeps the last good
+        // preview until the next good build.
+        let mut last_change = newest_swift_mtime(&app_sources);
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            match child.try_wait() {
+                Ok(Some(_)) => break, // window closed
+                Ok(None) => {}
+                Err(e) => return Err(format!("waiting on the preview host: {e}")),
+            }
+            let now = newest_swift_mtime(&app_sources);
+            if now <= last_change {
+                continue;
+            }
+            last_change = now;
+            print!("\u{21bb} rebuilding\u{2026} ");
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+            match build_product("PreviewViews") {
+                Ok(()) => {
+                    seq += 1;
+                    match stage(seq) {
+                        Ok(()) => println!("reloaded"),
+                        Err(e) => println!("(staging failed: {e})"),
+                    }
+                }
+                Err(_) => println!("build failed \u{2014} keeping the last good preview"),
+            }
+        }
+        Ok(())
     }
 
     fn ios(&self) -> Result<(), String> {
@@ -620,6 +788,31 @@ fn defines(listing: &str, symbol: &str) -> bool {
         };
         name.strip_prefix('_').unwrap_or(name) == symbol && kind != "U" && kind != "u"
     })
+}
+
+/// The most recent modification time among the `.swift` files under `dir`, used
+/// as a cheap change signal for the preview watcher (no extra crates).
+fn newest_swift_mtime(dir: &Path) -> std::time::SystemTime {
+    let mut newest = std::time::UNIX_EPOCH;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("swift") {
+                if let Ok(modified) = entry.metadata().and_then(|m| m.modified()) {
+                    if modified > newest {
+                        newest = modified;
+                    }
+                }
+            }
+        }
+    }
+    newest
 }
 
 fn host_triple() -> Result<String, String> {
@@ -1144,8 +1337,8 @@ void sf_android_run(void* app);
         assert!(!found.contains(&"sf_android_run".to_string()));
         assert_eq!(
             found.len(),
-            15,
-            "12 core plus the desktop host's three — {found:?}"
+            17,
+            "12 core plus the desktop host's five (run, two IME, two file-dialog) — {found:?}"
         );
     }
 

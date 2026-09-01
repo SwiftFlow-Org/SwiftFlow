@@ -56,6 +56,12 @@ let rustLibDir = ProcessInfo.processInfo.environment["SWIFTFLOW_RUST_LIB_DIR"]
 // manifest-evaluation time. build-android.sh sets both.
 let isAndroid = ProcessInfo.processInfo.environment["SWIFTFLOW_PLATFORM"] == "android"
 
+// The framework is one dynamic image only on desktop, where the preview host
+// and a views dylib must share a single renderer. iOS and Android keep the
+// static product: a dynamic one there would become an embedded framework
+// needing signing/packaging this build path doesn't do.
+let isDesktop = ProcessInfo.processInfo.environment["SWIFTFLOW_PLATFORM"] == "desktop"
+
 // Exactly one Rust archive is ever linked. A Rust staticlib embeds all
 // its upstream crates, so libswiftflow_android.a already carries every
 // sf_* symbol swiftflow_wgpu and swiftflow_core define, just as
@@ -85,6 +91,7 @@ let package = Package(
     products: [
         .library(
             name: "SwiftFlowCore",
+            type: isDesktop ? .dynamic : nil,
             targets: ["SwiftFlowCore"]
         )
     ],
@@ -105,33 +112,23 @@ let package = Package(
                     "swiftflow_desktop",
                     .when(platforms: [.macOS, .linux, .windows])
                 ),
+                // -L finds the archive/dylib at link time; the rpath is how the
+                // loader finds the *dylib* at launch. Without it, an app linked
+                // against libswiftflow_desktop.dylib builds fine and then fails
+                // to start — the dynamic-link failure surfaces at launch, not
+                // build. With both .a and .dylib in this dir, -lswiftflow_desktop
+                // resolves to the dylib by default.
                 .unsafeFlags([
                     "-L\(rustLibDir)",
+                    "-Xlinker", "-rpath", "-Xlinker", rustLibDir,
                 ]),
-                // Everything libswiftflow_desktop.a itself needs. Passed as
-                // raw flags rather than .linkedFramework on purpose: the
-                // -L above is already proving that unsafeFlags from this
-                // target reach the executable's link line (the archive is
-                // found — the failures were undefined symbols, not a
-                // missing library), whereas .linkedFramework here did not
-                // resolve them. Same channel, no propagation to assume.
-                //
-                //   Carbon              — TIS* / LMGetKbdType, winit's
-                //                         keyboard-layout lookup
-                //   CoreGraphics        — display and window geometry
-                //   CoreVideo           — display link
-                //   ApplicationServices — umbrella the above reach through
-                //   AppKit/Metal/QuartzCore — winit's window, wgpu's device
-                .unsafeFlags([
-                    "-framework", "Carbon",
-                    "-framework", "CoreGraphics",
-                    "-framework", "CoreVideo",
-                    "-framework", "ApplicationServices",
-                    "-framework", "AppKit",
-                    "-framework", "Metal",
-                    "-framework", "QuartzCore",
-                ], .when(platforms: [.macOS])),
-                .linkedLibrary("dl", .when(platforms: [.linux])),
+// The macOS -framework block that lived here (Carbon,
+                // CoreGraphics, AppKit, Metal, …) is gone: it existed because a
+                // *staticlib* only records its link requirements. The cdylib is
+                // fully linked by cargo — `otool -L` on it already names every
+                // one of those frameworks — so an app that links the dylib pulls
+                // them in transitively and must not name them again.
+                                .linkedLibrary("dl", .when(platforms: [.linux])),
                 .linkedLibrary("m", .when(platforms: [.linux])),
                 .linkedLibrary("pthread", .when(platforms: [.linux])),
                 // libc++ is an Apple-toolchain spelling; the Linux

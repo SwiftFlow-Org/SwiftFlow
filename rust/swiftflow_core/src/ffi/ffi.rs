@@ -14,7 +14,20 @@ pub trait SFBackend: Send + Sync {
 
     fn upload_image(&mut self, image_id: u32, rgba: &[u8], width: u32, height: u32);
 
+    /// Uploads raw BGRA pixels (no decode). Default no-op for backends that
+    /// don't render offscreen frames.
+    fn upload_image_bgra(&mut self, image_id: u32, bgra: &[u8], width: u32, height: u32) {
+        let _ = (image_id, bgra, width, height);
+    }
+
     fn drop_image(&mut self, image_id: u32);
+
+    /// Copies the most recent offscreen frame (tightly packed BGRA) into `out`.
+    /// Returns bytes written; 0 for a windowed backend that never reads back.
+    fn read_frame(&self, out: *mut u8, cap: usize) -> usize {
+        let _ = (out, cap);
+        0
+    }
 }
 
 static mut BACKEND: Option<Box<dyn SFBackend>> = None;
@@ -33,6 +46,17 @@ pub fn release_backend() {
     unsafe {
         BACKEND = None;
         DRAW_LIST = None;
+    }
+}
+
+/// Copies the latest offscreen frame into `out` (BGRA, width*height*4). Returns
+/// bytes written, or 0 if there is no offscreen backend or no frame yet.
+#[no_mangle]
+pub extern "C" fn sf_read_frame(out: *mut u8, cap: usize) -> usize {
+    let backend = unsafe { BACKEND.as_ref() };
+    match backend {
+        Some(backend) => backend.read_frame(out, cap),
+        None => 0,
     }
 }
 
@@ -432,6 +456,21 @@ pub extern "C" fn sf_register_image(id: u32, bytes: *const u8, len: usize) -> SF
     SFImageSize {
         width: img.width as f32,
         height: img.height as f32,
+    }
+}
+
+/// Uploads a raw BGRA frame under `id` (replacing any prior texture for it), for
+/// live sources like the preview pane where per-frame PNG encoding is too slow.
+/// `len` must be at least width*height*4.
+#[no_mangle]
+pub extern "C" fn sf_register_image_raw(id: u32, bgra: *const u8, len: usize, width: u32, height: u32) {
+    if bgra.is_null() || (width as usize) * (height as usize) * 4 > len {
+        return;
+    }
+    let data = unsafe { std::slice::from_raw_parts(bgra, len) };
+    let backend = unsafe { BACKEND.as_mut() };
+    if let Some(backend) = backend {
+        backend.upload_image_bgra(id, data, width, height);
     }
 }
 

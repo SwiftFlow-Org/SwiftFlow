@@ -63,6 +63,40 @@ public final class ImageRegistry {
         )
     }
 
+    /// Reserves an image id for a live stream (see `updateRaw`).
+    public func reserveStreamID() -> UInt32 {
+        let id = nextID
+        nextID += 1
+        return id
+    }
+
+    /// Uploads raw BGRA pixels under `id`, replacing any prior texture, and
+    /// returns a fresh `Entry` for the current dimensions. For live sources
+    /// (the preview pane) where decoding a PNG per frame would be far too slow.
+    /// Must run on the render thread — it touches the GPU backend.
+    public func updateRaw(
+        id: UInt32,
+        width: Int,
+        height: Int,
+        assetScale: Float,
+        bgra: UnsafeRawPointer,
+        byteCount: Int
+    ) -> Entry {
+        sf_register_image_raw(
+            id,
+            bgra.assumingMemoryBound(to: UInt8.self),
+            byteCount,
+            UInt32(width),
+            UInt32(height)
+        )
+        return Entry(
+            id: id,
+            pixelWidth: Float(width),
+            pixelHeight: Float(height),
+            assetScale: assetScale
+        )
+    }
+
     public func release(_ entry: Entry) {
         sf_unregister_image(entry.id)
         entries = entries.filter { $0.value.id != entry.id }

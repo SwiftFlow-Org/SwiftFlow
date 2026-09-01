@@ -26,9 +26,9 @@ import PackageDescription
 
 let package = Package(
     name: "SwiftFlowMacros",
-    // Deliberately low. Nothing this package generates needs a modern
-    // runtime; setting a floor here would defeat the point of not using
-    // Apple's macro.
+    // Deliberately low. Nothing this package ships needs a modern runtime, and
+    // keeping the floor here below the framework's lets an app that only wants
+    // the macros (e.g. #Preview) build for its own, lower deployment target.
     platforms: [.iOS(.v13), .macOS(.v10_15)],
     products: [
         .library(name: "SwiftFlowMacros", targets: ["SwiftFlowMacros"])

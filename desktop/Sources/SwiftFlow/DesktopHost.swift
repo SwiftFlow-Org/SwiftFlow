@@ -35,7 +35,9 @@ public final class DesktopHost {
     func frame(dt: Float) {
         guard let rootView else { return }
 
+        MainQueue.drain()
         ImageLoader.shared.drainPending()
+        FolderPicker.shared.drainPending()
 
         let anyScrollActive = NodeRegistry.shared.scrollStates.values.contains {
             $0.isDragging || $0.isSettling
@@ -83,6 +85,23 @@ public final class DesktopHost {
             x: x, y: y, t: t,
             path: NodeBuilder.hitPath(&node, x: x, y: y),
             scrolls: NodeBuilder.scrollPath(&node, x: x, y: y)
+        )
+    }
+
+    @MainActor
+    func secondaryClick(x: Float, y: Float, t: Double) {
+        _ = t
+        guard var node = cachedNode else { return }
+        // Hit-testing stays in physical pixels — `cachedNode`'s frames were
+        // baked out in that space by `sf_render_tree`. The anchor handed to
+        // `MenuPresenter` is different: `MenuOverlay` positions and clamps
+        // the panel against `Screen.width`/`height`, which are logical
+        // points, so the anchor has to be too, or the panel lands at the
+        // click position times the display's scale factor.
+        let scale = surface.scale > 0 ? surface.scale : 1
+        MenuPresenter.shared.handleSecondaryClick(
+            path: NodeBuilder.hitPath(&node, x: x, y: y),
+            at: Point(x: x / scale, y: y / scale)
         )
     }
 
@@ -139,6 +158,10 @@ private func onScroll(_ x: Float, _ y: Float, _ dx: Float, _ dy: Float, _ phase:
     }
 }
 
+private func onSecondaryClick(_ x: Float, _ y: Float, _ t: Double) {
+    MainActor.assumeIsolated { DesktopHost.shared.secondaryClick(x: x, y: y, t: t) }
+}
+
 private func onResized(_ info: SFDesktopSurfaceInfo) {
     MainActor.assumeIsolated { DesktopHost.shared.applySurface(info) }
 }
@@ -165,7 +188,76 @@ private func onIMEEnabled(_ enabled: UInt32) {
     TextInput.shared.imeEnabled(enabled != 0)
 }
 
+/// An input event forwarded into an offscreen preview (from an editor pane).
+/// Coordinates are in the preview's physical pixels — the same space the
+/// windowed host's pointer callbacks use.
+public enum PreviewInput {
+    case pointerDown(x: Float, y: Float)
+    case pointerMoved(x: Float, y: Float)
+    case pointerUp(x: Float, y: Float)
+    case scroll(x: Float, y: Float, dx: Float, dy: Float)
+}
+
 extension DesktopHost {
+
+    /// Headless render loop for the preview pane: renders into an offscreen
+    /// texture and hands each frame's BGRA pixels to `tick`, which publishes
+    /// them (e.g. to shared memory). No window, no winit — driven here.
+    ///
+    /// v1 forces a render every tick rather than gating on `needsRender`, so a
+    /// static preview still streams frames; that's simple and correct, if a
+    /// little wasteful when nothing changes.
+    @MainActor
+    public func runOffscreen(
+        root: any View,
+        widthPoints: Int,
+        heightPoints: Int,
+        scale: Float,
+        input: () -> [PreviewInput] = { [] },
+        tick: (UnsafePointer<UInt8>, Int, Int) -> Void
+    ) {
+        rootView = root
+        let pxW = UInt32(max(1, Int(Float(widthPoints) * scale)))
+        let pxH = UInt32(max(1, Int(Float(heightPoints) * scale)))
+
+        swiftflow_init_offscreen(pxW, pxH)
+        applySurface(SFDesktopSurfaceInfo(
+            width: pxW, height: pxH, scale: scale,
+            safeTop: 0, safeBottom: 0, safeLeading: 0, safeTrailing: 0
+        ))
+
+        var buffer = [UInt8](repeating: 0, count: Int(pxW * pxH) * 4)
+        let parent = getppid()
+        while true {
+            // Exit if our launcher (the editor) has gone away and we were
+            // reparented to init — otherwise a closed pane leaks a renderer.
+            if getppid() != parent || getppid() == 1 { break }
+
+            // Feed forwarded input before rendering: pointer routing reads the
+            // previous frame's node tree (cachedNode), and taps that fire mutate
+            // state this frame then draws.
+            for event in input() {
+                let t = ProcessInfo.processInfo.systemUptime
+                switch event {
+                case let .pointerDown(x, y): pointerDown(x: x, y: y, t: t)
+                case let .pointerMoved(x, y): pointerMoved(x: x, y: y, t: t)
+                case let .pointerUp(x, y): pointerUp(x: x, y: y, t: t)
+                case let .scroll(x, y, dx, dy): scroll(x: x, y: y, dx: dx, dy: dy, phase: 0)
+                }
+            }
+
+            NodeRegistry.shared.needsRender = true
+            frame(dt: 1.0 / 60.0)
+
+            let n = buffer.withUnsafeMutableBufferPointer {
+                sf_read_frame($0.baseAddress, $0.count)
+            }
+            if n == buffer.count {
+                buffer.withUnsafeBufferPointer { tick($0.baseAddress!, Int(pxW), Int(pxH)) }
+            }
+            Thread.sleep(forTimeInterval: 1.0 / 60.0)
+        }
+    }
 
     @MainActor
     func run(title: String, width: Double, height: Double, min_width: Double, min_height: Double) {
@@ -190,7 +282,8 @@ extension DesktopHost {
             key: onKey,
             imePreedit: onIMEPreedit,
             imeCommit: onIMECommit,
-            imeEnabled: onIMEEnabled
+            imeEnabled: onIMEEnabled,
+            secondaryClick: onSecondaryClick
         )
 
         title.withCString { titlePtr in

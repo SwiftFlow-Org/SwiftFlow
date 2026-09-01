@@ -6,9 +6,6 @@ import Foundation
 
 extension SwiftFlowApp {
     public static func main() {
-
-        setbuf(stdout, nil)
-
         MainActor.assumeIsolated {
             let app = Self()
             guard let provider = app.body as? any LifecycleProvider else {

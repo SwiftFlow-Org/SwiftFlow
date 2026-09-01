@@ -41,6 +41,12 @@ public struct Image: View {
         self.source = .registered(entry)
     }
 
+    /// Displays an already-registered image (e.g. a live raw frame). Pair with
+    /// `ImageRegistry.updateRaw` for a stream like the preview pane.
+    public init(raw entry: ImageRegistry.Entry) {
+        self.source = .registered(entry)
+    }
+
     /// Lets this image be stretched to fill its frame.
     ///
     /// Without it an image reserves its asset's own size.
