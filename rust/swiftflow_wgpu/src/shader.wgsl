@@ -612,7 +612,11 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     );
     let refracted = textureSample(scene_tex, blur_sampler, refract_uv).rgb;
 
-    let backdrop_edged = mix(backdrop_rgb, refracted, smoothstep(0.0, 0.35, eb));
+    // Only glass bends its edge. A material is a blur with a tint on it, so
+    // gating on `glass` here is what keeps the lens off every backdrop in the
+    // app — both arrive at this shader as a rect with a blur radius, and
+    // refraction is the only thing that tells them apart.
+    let backdrop_edged = mix(backdrop_rgb, refracted, smoothstep(0.0, 0.35, eb) * glass);
 
     let bd_luma = dot(backdrop_edged, vec3<f32>(0.2126, 0.7152, 0.0722));
     let vibrant = mix(vec3<f32>(bd_luma), backdrop_edged, 1.0 + GLASS_VIBRANCY * glass);
