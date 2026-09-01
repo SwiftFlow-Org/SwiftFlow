@@ -101,6 +101,8 @@ blocks. There is no ten-child limit — it uses parameter packs.
 | `AsyncImage` | `AsyncImage(url:)`, `AsyncImage(url:content:)` |
 | `Icon` | `Icon.<name>` from the generated catalogue, or `Icon(scalar:)` |
 | `TextField` | `TextField(_ placeholder: String, text: Binding<String>, font: Font = .body, onSubmit: (() -> Void)? = nil)` |
+| `Toggle` | `Toggle(_ title: String, isOn: Binding<Bool>)`, `Toggle(isOn:)`, `Toggle(isOn:label:)` |
+| `Slider` | `Slider(value: Binding<Float>, in bounds: ClosedRange<Float> = 0...1, step: Float? = nil)` |
 | `Divider` | `Divider()` |
 | `Spacer` | `Spacer(minLength: Float = 0)` |
 | `EmptyView` | `EmptyView()` |
@@ -243,6 +245,38 @@ reports them back, so there is nothing to hit-test against yet.
 
 For an editor — anything that wants raw keys rather than a field — use
 `.textInput(onInsert:onKey:)` directly. See [Text input](#text-input).
+
+```swift
+@State private var wifi = true
+
+Toggle("Wi-Fi", isOn: $wifi)
+Toggle(isOn: $wifi)                    // the switch on its own
+Toggle(isOn: $wifi) { Label() }        // any view as the label
+```
+
+With a label the row fills the width and the switch sits at the trailing
+edge, and the whole row is the tap target. Holding the switch stretches
+the knob toward the side it would travel to; letting go springs it
+across, with the track's colour following a little behind.
+
+```swift
+@State private var volume: Float = 0.4
+@State private var rating: Float = 3
+
+Slider(value: $volume)
+Slider(value: $rating, in: 1...5, step: 1)     // snaps, and shows ticks
+```
+
+A drag starts anywhere on the slider's row, not only on the knob, and
+the value follows where the finger *is* rather than how far it has
+moved — so a press at the far end jumps straight there. Holding it
+thickens the track and grows the knob. A `step` snaps the value and
+draws a tick per stop, up to 40 of them; past that the ticks are
+dropped, since they would read as a solid line.
+
+**Differs:** the knob does not keep its grab offset. Grabbing it a few
+points off centre and dragging moves the value to the finger, not by the
+distance dragged.
 
 ```swift
 Button("Save") { save() }
