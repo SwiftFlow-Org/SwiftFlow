@@ -423,9 +423,23 @@ Material.regularMaterial     // blur 7
 Material.thickMaterial       // blur 9
 Material.ultraThickMaterial  // blur 11
 
-material.progressive(start: Float = 0.5)   // blur ramps out toward the bottom
-.progressiveBlur(_ material: Material = .regularMaterial, start: Float = 0.5)
+material.progressive(toward: ProgressiveEdge = .bottom, start: Float = 0.5)
+.progressiveBlur(
+    _ material: Material = .regularMaterial,
+    toward edge: ProgressiveEdge = .bottom,
+    start: Float = 0.5
+)
 ```
+
+`ProgressiveEdge` is the edge the blur fades out *toward*: `.bottom` for
+what sits under a navigation bar, `.top` for a tab bar or a bottom
+toolbar. `start` is how far along the shape the ramp begins, measured
+from the other edge.
+
+The blur itself thins as it ramps, walking down from the heavy blur to
+the screen as it stands, rather than a full blur fading its opacity out.
+At the quiet end the material is an exact copy of what is behind it, so
+it leaves no seam.
 
 Glass — a material that also refracts:
 
@@ -447,6 +461,21 @@ glass.interactive(_ enabled: Bool = true)   // press response
 .gesture(DragGesture(axis: Axis))
 .gesture(LongPressGesture())
 ```
+
+```swift
+DragGesture(
+    axis: Axis = .all,
+    minimumDistance: Float = 8,
+    edge: Edge? = nil,            // start only within `edgeWidth` of an edge
+    edgeWidth: Float = 20,
+    yieldsToScroll: Bool = false  // a scroll that can move wins the press
+)
+```
+
+`yieldsToScroll` is for a gesture that covers a whole screen, where the
+scroll under the finger is the more specific thing. It gives way only to
+a scroll that can actually move the way the finger is going, so a shelf
+already at its end passes the drag through.
 
 ```swift
 DragGesture(...)
@@ -583,6 +612,12 @@ TabView(
 
 **Differs:** each tab is wrapped in its own `NavigationStack`
 automatically. Don't add one.
+
+`interactiveBack` reads a horizontal drag anywhere on the screen, not
+only near the leading edge. A horizontal `ScrollView` under the finger
+keeps the press while it still has somewhere to scroll, and a view with
+its own drag gesture — a row with swipe actions, say — wins outright,
+being deeper in the hit path.
 
 ---
 

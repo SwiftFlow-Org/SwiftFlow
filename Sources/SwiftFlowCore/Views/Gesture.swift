@@ -64,6 +64,16 @@ public struct DragGesture {
 
     let edge: Edge?
     let edgeWidth: Float
+
+    /// Whether a scroll that can actually move along this gesture's axis takes
+    /// the press instead.
+    ///
+    /// Off by default: a drag written on a view usually means that view, and a
+    /// scroll somewhere under it should not quietly win. On for a gesture that
+    /// covers the whole screen, where the scroll the finger is on is the more
+    /// specific thing.
+    let yieldsToScroll: Bool
+
     var changed: ((DragValue) -> Void)?
     var ended: ((DragValue) -> Void)?
 
@@ -72,6 +82,7 @@ public struct DragGesture {
         minimumDistance: Float = 8,
         edge: Edge? = nil,
         edgeWidth: Float = 20,
+        yieldsToScroll: Bool = false,
         fileID: String = #fileID, line: Int = #line, column: Int = #column
     ) {
         self.id = fnv1a("drag:\(fileID):\(line):\(column)")
@@ -79,6 +90,7 @@ public struct DragGesture {
         self.minimumDistance = minimumDistance
         self.edge = edge
         self.edgeWidth = edgeWidth
+        self.yieldsToScroll = yieldsToScroll
     }
 
     func accepts(startX: Float, startY: Float) -> Bool {

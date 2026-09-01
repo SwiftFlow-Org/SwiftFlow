@@ -141,9 +141,13 @@ public final class GestureRouter {
 
                 if travelled >= gesture.minimumDistance {
                     if gesture.axis.claims(dx: dx, dy: dy) {
-                        press.phase = .drag
-                        cancelTap(&press)
-                        if !hasFired(press) { cancelLongPress(&press) }
+                        if gesture.yieldsToScroll, scrollWants(press, dx: dx, dy: dy) {
+                            claimScroll(&press, dx: dx, dy: dy, x: x, y: y, t: t)
+                        } else {
+                            press.phase = .drag
+                            cancelTap(&press)
+                            if !hasFired(press) { cancelLongPress(&press) }
+                        }
                     } else {
 
                         claimScroll(&press, dx: dx, dy: dy, x: x, y: y, t: t)
@@ -170,6 +174,22 @@ public final class GestureRouter {
         }
 
         self.press = press
+    }
+
+    /// Whether a scroll under the finger can move the way the finger is going.
+    ///
+    /// Not `claimScroll`, which falls back to bouncing a scroll that has hit
+    /// its end. A gesture only steps aside for a scroll that will actually
+    /// scroll.
+    private func scrollWants(_ press: Press, dx: Float, dy: Float) -> Bool {
+        let horizontal = abs(dx) > abs(dy)
+        let along = horizontal ? dx : dy
+
+        for candidate in press.scrolls where (candidate.axis == .horizontal) == horizontal {
+            let state = NodeRegistry.shared.scrollState(for: candidate.id)
+            if canScroll(state, by: along) { return true }
+        }
+        return false
     }
 
     private func claimScroll(

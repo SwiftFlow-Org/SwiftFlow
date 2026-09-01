@@ -13,13 +13,16 @@ public struct NavStack<Root: View>: View {
 
     var stack: NavigationStackModel { explicitStack ?? Navigator.current }
 
+    /// Anywhere on the screen, not just the leading edge — but a horizontal
+    /// scroll under the finger keeps the press, since it is the more specific
+    /// thing the finger is on.
     static var backDrag: DragGesture {
-        DragGesture(axis: .horizontal, minimumDistance: 12, edge: .leading, edgeWidth: 24)
+        DragGesture(axis: .horizontal, minimumDistance: 12, yieldsToScroll: true)
     }
 
     public init(
         stack: NavigationStackModel? = nil,
-        background: Material? = Material.ultraThinMaterial, //Material(blurRadius: 50, tint: .background, isProgressive: true),
+        background: Material? = Material(blurRadius: 50, tint: .background, isProgressive: true),
         transition: NavTransition = .standard,
         screenBackground: Color = .background,
         interactiveBack: Bool = true,
