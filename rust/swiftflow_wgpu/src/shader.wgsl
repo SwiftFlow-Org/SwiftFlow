@@ -594,8 +594,26 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     );
     let soft = textureSample(blur_tex, blur_sampler, soft_uv).rgb;
 
+    // The half-resolution pyramid level: the mildest blur there is, and what a
+    // progressive material thins down to before it fades out entirely.
+    let mild = textureSample(scene_tex, blur_sampler, soft_uv).rgb;
+
+    // How much of this fragment's blur survives. 1 everywhere on a plain
+    // material; on a progressive one it thins out down the shape.
+    let progressive = inst.params2.x;
+    let p_start = clamp(inst.params2.y, 0.0, 0.999);
+    let ramp = mix(1.0, 1.0 - smoothstep(p_start, 1.0, in.uv.y), progressive);
+
+    // The blur has to go before the pane does. Fading opacity alone leaves a
+    // fully blurred layer half-dissolved over the sharp content it came from,
+    // which reads as a doubled image rather than as less blur — so the radius
+    // is thinned first (squared, so it leads the fade) and the pane's alpha
+    // follows it down at the bottom.
+    let soft_progressive = mix(mild, soft, ramp * ramp);
+
     let clarity = inst.params3.x;
-    let backdrop_rgb = mix(soft, sharp, max(clarity, edge * GLASS_RIM_SHARPNESS) * glass);
+    let backdrop_rgb = mix(
+        soft_progressive, sharp, max(clarity, edge * GLASS_RIM_SHARPNESS) * glass);
 
     // Reflect across the edge: dist<0 inside, so -2*dist moves outward by 2|dist|,
     // sampling the content the same distance beyond the edge and bringing it in
@@ -649,12 +667,7 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     let shade = fresnel * pow(away, SHADOW_POWER) * SHADOW_DEPTH * specular * glass;
     color = vec4<f32>(max(color.rgb - shade * fill_mask, vec3<f32>(0.0)), color.a);
 
-    let progressive = inst.params2.x;
-    if (progressive > 0.0) {
-        let start = clamp(inst.params2.y, 0.0, 0.999);
-        let ramp  = 1.0 - smoothstep(start, 1.0, in.uv.y);
-        color = vec4<f32>(color.rgb, color.a * mix(1.0, ramp, progressive));
-    }
+    color = vec4<f32>(color.rgb, color.a * ramp);
 
     let screen = inst.frame.xy + in.uv * inst.frame.zw;
     let clip = clip_coverage(screen, inst.clip_rect, inst.clip_radii);
