@@ -1,5 +1,17 @@
 import CSwiftFlow
 
+/// Which edge a progressive material's blur fades out toward.
+public enum ProgressiveEdge: Sendable {
+
+    /// Strongest at the top, gone by the bottom. What sits under a navigation
+    /// bar.
+    case bottom
+
+    /// Strongest at the bottom, gone by the top. What sits under a tab bar or
+    /// a bottom toolbar.
+    case top
+}
+
 /// A backdrop blur that shows what is behind it, tinted.
 public struct Material: Sendable {
     public let blurRadius: Float
@@ -7,28 +19,45 @@ public struct Material: Sendable {
 
     public let isProgressive: Bool
 
+    public let progressiveEdge: ProgressiveEdge
+
     public let progressiveStart: Float
 
     public init(
         blurRadius: Float,
         tint: Color,
         isProgressive: Bool = false,
+        progressiveEdge: ProgressiveEdge = .bottom,
         progressiveStart: Float = 0.5
     ) {
         self.blurRadius = blurRadius
         self.tint = tint
         self.isProgressive = isProgressive
+        self.progressiveEdge = progressiveEdge
         self.progressiveStart = progressiveStart
     }
 
-    /// Ramps this material's blur out below `start`, measured 0…1 down the shape.
-    public func progressive(start: Float = 0.5) -> Material {
+    /// Ramps this material's blur out toward one edge, starting `start` of the
+    /// way along the shape from the other one.
+    public func progressive(
+        toward edge: ProgressiveEdge = .bottom,
+        start: Float = 0.5
+    ) -> Material {
         Material(
             blurRadius: blurRadius,
             tint: tint,
             isProgressive: true,
+            progressiveEdge: edge,
             progressiveStart: start
         )
+    }
+
+    /// The sign carries the direction: negative runs the ramp the other way
+    /// up. A field of its own would mean a new slot in `SFNode`, which is a
+    /// C struct three hosts and the renderer all agree on.
+    var progressiveAmount: Float {
+        guard isProgressive else { return 0 }
+        return progressiveEdge == .top ? -1 : 1
     }
 
     public static let ultraThinMaterial = Material(blurRadius: 3, tint: Color(r: 1, g: 1, b: 1, a: 0.08))
@@ -49,7 +78,7 @@ extension Material {
         node.kind = SF_NODE_RECT
         node.fill = tint.toSFColor()
         node.blurRadius = blurRadius * DeviceScale.current
-        node.progressiveBlur = isProgressive ? 1 : 0
+        node.progressiveBlur = progressiveAmount
         node.progressiveStart = progressiveStart
         node.sizing = SF_SIZING_FILL
         return node
@@ -69,7 +98,7 @@ extension MaterialFilledShape {
         node.kind = SF_NODE_RECT
         node.fill = material.tint.toSFColor()
         node.blurRadius = material.blurRadius * DeviceScale.current
-        node.progressiveBlur = material.isProgressive ? 1 : 0
+        node.progressiveBlur = material.progressiveAmount
         node.progressiveStart = material.progressiveStart
         node.sizing = SF_SIZING_FILL
         node.cornerRadius = shapeCornerRadius(shape) ?? 0
@@ -97,11 +126,12 @@ extension Capsule {
 
 extension View {
 
-    /// Backs this view with a material whose blur ramps out toward its bottom edge.
+    /// Backs this view with a material whose blur ramps out toward one edge.
     public func progressiveBlur(
         _ material: Material = .regularMaterial,
+        toward edge: ProgressiveEdge = .bottom,
         start: Float = 0.5
     ) -> BackgroundShapeModifier<Self, Material> {
-        background(material.progressive(start: start))
+        background(material.progressive(toward: edge, start: start))
     }
 }

@@ -608,7 +608,13 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     // material; on a progressive one it thins out down the shape.
     let progressive = inst.params2.x;
     let p_start = clamp(inst.params2.y, 0.0, 0.999);
-    let ramp = mix(1.0, 1.0 - smoothstep(p_start, 1.0, in.uv.y), progressive);
+
+    // A negative amount runs the ramp the other way up: strongest at the
+    // bottom edge, gone by the top, which is what sits under a tab bar. The
+    // direction rides on the sign because `SFNode` is a C struct the renderer
+    // and all three hosts agree on, and a new slot in it is not free.
+    let p_y = select(in.uv.y, 1.0 - in.uv.y, progressive < 0.0);
+    let ramp = mix(1.0, 1.0 - smoothstep(p_start, 1.0, p_y), abs(progressive));
 
     // Walk down the pyramid rather than fade a full blur out. Fading opacity
     // alone leaves a heavy blur half-dissolved over the sharp content it came

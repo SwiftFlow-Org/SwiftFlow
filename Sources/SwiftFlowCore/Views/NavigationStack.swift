@@ -295,7 +295,9 @@ struct EdgeEffect {
         // Always a ramp, whatever material it was cut from. A band that stops
         // dead is the artefact this exists to avoid: content is meant to
         // dissolve as it goes under the bar, not meet a line partway down.
-        node.progressiveBlur = 1
+        // The direction is still the material's, so a bottom bar can hand one
+        // that fades upward.
+        node.progressiveBlur = material.progressiveEdge == .top ? -1 : 1
         node.progressiveStart = 0
         node.edgeEffectHeight = height
     }
