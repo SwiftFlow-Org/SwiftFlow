@@ -255,7 +255,7 @@ extension View {
     ///
     /// Pass `false` for anything whose outline is load-bearing rather than
     /// decorative.
-    public func mergeable(_ allowed: Bool) -> MergeModifier<Self> {
+    public func mergeable(_ allowed: Bool = false) -> MergeModifier<Self> {
         MergeModifier(content: self, allowed: allowed)
     }
 }
@@ -429,14 +429,15 @@ public struct ScaleModifier<Content: View>: View {
     public typealias Body = Never
     public var body: Never { fatalError() }
     let content: Content
-    let scale: Float
+    let x: Float
+    let y: Float
 }
 
 extension ScaleModifier {
     public func toSFNode() -> SFNode {
         var node = content.toSFNode()
-        node.scale.x *= scale
-        node.scale.y *= scale
+        node.scale.x *= x
+        node.scale.y *= y
         return node
     }
 }
@@ -444,7 +445,12 @@ extension ScaleModifier {
 extension View {
     /// Scales this view about its centre, without affecting layout.
     public func scale(_ value: Float) -> ScaleModifier<Self> {
-        ScaleModifier(content: self, scale: value)
+        ScaleModifier(content: self, x: value, y: value)
+    }
+
+    /// Scales this view about its centre by a different factor per axis.
+    public func scale(x: Float = 1, y: Float = 1) -> ScaleModifier<Self> {
+        ScaleModifier(content: self, x: x, y: y)
     }
 }
 

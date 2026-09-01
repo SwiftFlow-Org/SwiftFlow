@@ -214,7 +214,7 @@ struct AnimatableSnapshot: Equatable {
     }
 }
 
-private func scalarSpringStep(x0: Float, v0: Float, omega: Float, zeta: Float, dt: Float) -> (x: Float, v: Float) {
+func scalarSpringStep(x0: Float, v0: Float, omega: Float, zeta: Float, dt: Float) -> (x: Float, v: Float) {
     if zeta < 1.0 {
         let omegaD = omega * sfSqrt(1 - zeta * zeta)
         let a = x0

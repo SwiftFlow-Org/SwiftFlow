@@ -460,9 +460,52 @@ NavLink pushes to), `TabBuildContext` (which scroll view a tab's
 strictly depth-first, and all save/restore rather than set/clear so
 nesting works.
 
-One gap is the framework's, not the design's: `role: .search` places a
-tab at the trailing end but cannot style it as a capsule or make it a
-search field yet.
+**The selection pill is measured, not laid out.** It travels between
+items, so it cannot be a background that each item switches on — one
+shape has to know where the others are. `TabBarAnimator` is that: a
+single spring in item-index space, stepped with the frame's other
+animations, read back when the bar builds. The item boxes it
+interpolates between come from the renderer (`NodeFrames`, one frame
+behind), because the bar hugs its labels and the slots are not the same
+width — which is also what makes the pill change width as it crosses,
+the way iOS 26's does. Velocity does the rest: the faster it travels the
+further it stretches ahead of itself, and what it gains in width it
+gives back in height.
+
+That measurement needs an id on a node the build does not otherwise
+name, and `NodeBuilder` only labels a view's *outermost* node — inside a
+`ForEach` the row's key wins. Hence `MeasuredNode`, which writes the id
+itself, and hence the clear layer behind each item: relabelling the
+button's own node would strand the tap handler registered against it.
+
+**A drag is the same spring with a moving target.** Dragging along the
+bar does not take the pill off its spring and glue it to the finger; it
+points the spring at wherever the finger is, on a stiffer curve. Stretch,
+settling and the frame loop all keep working unchanged, and letting go is
+just one more target — the slot the finger's speed projects onto. What
+the drag does own is the selection: each slot it crosses becomes the
+selected tab, so `retarget` has to stand down while it runs, or the
+selection it caused would immediately re-aim the pill it came from.
+
+**The search tab collapses the group rather than resizing it.** Selecting
+a `role: .trailing` tab grows it into a search field and shrinks the
+group to a circle showing whichever tab it left. The group's box is what
+animates; its contents are pinned to the width they had at rest and
+merely covered, because a box that squeezes text is a box that reflows
+it — and a reflowing row measures narrower every frame, which would drag
+the box in after it. Two consequences fall out of the same fact:
+
+- Labels are `lineLimit(1)`, so a squeezed one ellipsizes instead of
+  wrapping and taking the bar's height with it.
+- Covered items fade fast — `clipShape` sets a corner radius and does not
+  mask, so anything still visible when the box closes past it would spill
+  into the bar. Opacity is the only mask available, and it is applied
+  outside the tint animation: animating an opacity that changes every
+  frame would make the fade lag the box meant to hide it.
+
+The search field itself is still only a shape. Selecting it does not
+focus anything or raise a keyboard — there is no search field view yet —
+and tapping the collapsed circle puts the tabs back.
 
 ## Sizing and padding
 
