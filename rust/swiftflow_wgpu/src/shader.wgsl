@@ -450,6 +450,11 @@ struct MaterialBuf {
 
 @group(2) @binding(2) var scene_tex    : texture_2d<f32>;
 
+// The scene at full resolution, untouched. Only a progressive material reads
+// it, and only at the end of its ramp, where the point is to leave the screen
+// exactly as it found it.
+@group(2) @binding(3) var sharp_tex   : texture_2d<f32>;
+
 const BLUR_W0: f32 = 0.2270270270;
 const BLUR_W1: f32 = 0.1945945946;
 const BLUR_W2: f32 = 0.1216216216;
@@ -594,9 +599,10 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     );
     let soft = textureSample(blur_tex, blur_sampler, soft_uv).rgb;
 
-    // The half-resolution pyramid level: the mildest blur there is, and what a
-    // progressive material thins down to before it fades out entirely.
-    let mild = textureSample(scene_tex, blur_sampler, soft_uv).rgb;
+    // The two rungs below `soft`: the half-resolution pyramid level, and the
+    // screen exactly as it stands. A progressive material walks down these.
+    let mild  = textureSample(scene_tex, blur_sampler, soft_uv).rgb;
+    let crisp = textureSample(sharp_tex, blur_sampler, screen_uv).rgb;
 
     // How much of this fragment's blur survives. 1 everywhere on a plain
     // material; on a progressive one it thins out down the shape.
@@ -604,12 +610,17 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     let p_start = clamp(inst.params2.y, 0.0, 0.999);
     let ramp = mix(1.0, 1.0 - smoothstep(p_start, 1.0, in.uv.y), progressive);
 
-    // The blur has to go before the pane does. Fading opacity alone leaves a
-    // fully blurred layer half-dissolved over the sharp content it came from,
-    // which reads as a doubled image rather than as less blur — so the radius
-    // is thinned first (squared, so it leads the fade) and the pane's alpha
-    // follows it down at the bottom.
-    let soft_progressive = mix(mild, soft, ramp * ramp);
+    // Walk down the pyramid rather than fade a full blur out. Fading opacity
+    // alone leaves a heavy blur half-dissolved over the sharp content it came
+    // from, which reads as a doubled image; stepping the radius down through
+    // the levels reads as what it is, less blur. At the end of the ramp the
+    // backdrop is the screen itself, so nothing has to fade to hide a seam.
+    let level = ramp * 2.0;
+    let soft_progressive = mix(
+        mix(crisp, mild, clamp(level, 0.0, 1.0)),
+        soft,
+        clamp(level - 1.0, 0.0, 1.0)
+    );
 
     let clarity = inst.params3.x;
     let backdrop_rgb = mix(
@@ -641,7 +652,10 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
 
     let luma = dot(soft, vec3<f32>(0.2126, 0.7152, 0.0722));
     let adaptive = mix(inst.tint.rgb, vec3<f32>(luma), GLASS_ADAPTIVE * glass);
-    let tinted = mix(vibrant, adaptive, inst.tint.a);
+    // The tint goes with the blur. Coverage does not: at the end of a ramp the
+    // backdrop is already the screen, so the pane can paint it straight back
+    // at full alpha and leave no edge where it stops.
+    let tinted = mix(vibrant, adaptive, inst.tint.a * ramp);
 
     var color = vec4<f32>(0.0);
     color = mix(color, vec4<f32>(tinted, 1.0), fill_mask);
@@ -667,7 +681,7 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     let shade = fresnel * pow(away, SHADOW_POWER) * SHADOW_DEPTH * specular * glass;
     color = vec4<f32>(max(color.rgb - shade * fill_mask, vec3<f32>(0.0)), color.a);
 
-    color = vec4<f32>(color.rgb, color.a * ramp);
+
 
     let screen = inst.frame.xy + in.uv * inst.frame.zw;
     let clip = clip_coverage(screen, inst.clip_rect, inst.clip_radii);

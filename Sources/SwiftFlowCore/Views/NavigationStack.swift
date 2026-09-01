@@ -19,7 +19,7 @@ enum NavigationBarMetrics {
 
     static let itemSpacing: Float = 12
 
-    static var collapsedHeight: Float { SafeArea.top + barHeight }
+    static var collapsedHeight: Float { SafeArea.top + barHeight + 12 }
 
     static func contentInset(mode: NavigationBarTitleDisplayMode, hasTitle: Bool) -> Float {
         collapsedHeight + largeBandHeight(mode: mode, hasTitle: hasTitle)
@@ -187,7 +187,7 @@ public struct NavigationStack<Content: View>: View {
     let barID: UInt32
 
     public init(
-        background: Material? = Material.ultraThinMaterial,// Material(blurRadius: 50, tint: .background, isProgressive: true),
+        background: Material? = Material(blurRadius: 50, tint: .background, isProgressive: true),
         progress: Float? = nil,
         @ViewBuilder content: () -> Content
     ) {
@@ -246,8 +246,7 @@ extension NavigationStack {
 
         let bar = NavigationBar(
             config: config,
-
-            background: nil,
+            background: background,
             progress: transitionProgress,
             barID: barID
         )
@@ -288,9 +287,15 @@ struct EdgeEffect {
     func apply(to node: inout SFNode) {
         guard height > 0 else { return }
         node.fill = material.tint.toSFColor()
-        node.blurRadius = material.blurRadius
-        node.progressiveBlur = material.isProgressive ? 1 : 0
 
+        // In points on the way in, like every other radius the framework
+        // takes. Without this the band blurs at half strength on a 2x screen.
+        node.blurRadius = material.blurRadius * DeviceScale.current
+
+        // Always a ramp, whatever material it was cut from. A band that stops
+        // dead is the artefact this exists to avoid: content is meant to
+        // dissolve as it goes under the bar, not meet a line partway down.
+        node.progressiveBlur = 1
         node.progressiveStart = 0
         node.edgeEffectHeight = height
     }
@@ -347,10 +352,7 @@ struct NavigationBar: View {
     var body: some View {
         if let background {
             barRow
-                .background(
-                    Material.hardMaterial
-                )
-                //.progressiveBlur(background, start: 0)
+                .progressiveBlur(background, start: 0)
         } else {
             barRow
                 .progressiveBlur(.hardMaterial, start: 0)
@@ -381,6 +383,7 @@ struct NavigationBar: View {
             .frame(height: NavigationBarMetrics.barHeight, maxWidth: .infinity)
         }
         .padding(.top, SafeArea.top)
+        .padding(.bottom, 12)
         .frame(height: NavigationBarMetrics.collapsedHeight, maxWidth: .infinity)
     }
 

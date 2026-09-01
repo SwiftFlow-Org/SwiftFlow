@@ -313,6 +313,12 @@ struct WgpuBackend {
     scene_texture: wgpu::Texture,
     scene_view: wgpu::TextureView,
 
+    /// The scene as it stands, copied out so a material can read it while the
+    /// scene itself is the pass's target. A material composites *into* the
+    /// scene, so it cannot sample it directly.
+    scene_copy_texture: wgpu::Texture,
+    scene_copy_view: wgpu::TextureView,
+
     pyr_half_texture: wgpu::Texture,
     pyr_half_view: wgpu::TextureView,
     pyr_quarter_texture: wgpu::Texture,
@@ -675,6 +681,8 @@ impl WgpuBackend {
         let (scene_texture, scene_view) = create_target(&device, width, height, "scene");
         let [(half_w, half_h), (quarter_w, quarter_h), (blur_w, blur_h)] =
             pyramid_dims(width, height);
+        let (scene_copy_texture, scene_copy_view) =
+            create_target(&device, width.max(1), height.max(1), "scene_copy");
         let (pyr_half_texture, pyr_half_view) = create_target(&device, half_w, half_h, "pyr_half");
         let (pyr_quarter_texture, pyr_quarter_view) =
             create_target(&device, quarter_w, quarter_h, "pyr_quarter");
@@ -746,6 +754,19 @@ impl WgpuBackend {
                     },
                     count: None,
                 },
+                // The scene at full resolution. A progressive material thins
+                // its blur all the way down to this, so its quiet end is the
+                // screen itself rather than the mildest blur on hand.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let glass_bg = make_glass_bg(
@@ -754,6 +775,7 @@ impl WgpuBackend {
             &blur_a_view,
             &sample_sampler,
             &pyr_half_view,
+            &scene_copy_view,
         );
 
         let material_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1005,6 +1027,8 @@ impl WgpuBackend {
             text_renderer,
             scene_texture,
             scene_view,
+            scene_copy_texture,
+            scene_copy_view,
             pyr_half_texture,
             pyr_half_view,
             pyr_quarter_texture,
@@ -1058,6 +1082,8 @@ impl WgpuBackend {
 
     fn resize_offscreen_targets(&mut self, width: u32, height: u32) {
         let (scene_texture, scene_view) = create_target(&self.device, width, height, "scene");
+        let (scene_copy_texture, scene_copy_view) =
+            create_target(&self.device, width, height, "scene_copy");
         let [(half_w, half_h), (quarter_w, quarter_h), (blur_w, blur_h)] =
             pyramid_dims(width, height);
         let (pyr_half_texture, pyr_half_view) =
@@ -1082,10 +1108,13 @@ impl WgpuBackend {
             &blur_a_view,
             &self.sample_sampler,
             &pyr_half_view,
+            &scene_copy_view,
         );
 
         self.scene_texture = scene_texture;
         self.scene_view = scene_view;
+        self.scene_copy_texture = scene_copy_texture;
+        self.scene_copy_view = scene_copy_view;
         self.pyr_half_texture = pyr_half_texture;
         self.pyr_half_view = pyr_half_view;
         self.pyr_quarter_texture = pyr_quarter_texture;
@@ -1130,7 +1159,10 @@ fn create_target(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Bgra8Unorm,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -1145,6 +1177,7 @@ fn make_glass_bg(
     blur_view: &wgpu::TextureView,
     sampler: &wgpu::Sampler,
     refraction_view: &wgpu::TextureView,
+    scene_view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("glass_bg"),
@@ -1161,6 +1194,10 @@ fn make_glass_bg(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: wgpu::BindingResource::TextureView(refraction_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(scene_view),
             },
         ],
     })
@@ -1587,6 +1624,19 @@ impl SFBackend for WgpuBackend {
                     }
                 }
                 Run::Material(idx) => {
+                    // Before the pyramid, and per material rather than per
+                    // frame: each one composites into the scene, so the next
+                    // has to read what the last one left.
+                    encoder.copy_texture_to_texture(
+                        self.scene_texture.as_image_copy(),
+                        self.scene_copy_texture.as_image_copy(),
+                        wgpu::Extent3d {
+                            width: self.config.width.max(1),
+                            height: self.config.height.max(1),
+                            depth_or_array_layers: 1,
+                        },
+                    );
+
                     for (label, src, dst) in [
                         ("halve_1_pass", &self.scene_sample_bg, &self.pyr_half_view),
                         (
