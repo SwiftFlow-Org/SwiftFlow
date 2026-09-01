@@ -48,7 +48,7 @@ public struct SwipeActionBuilder {
 
 enum SwipeMetrics {
 
-    static let buttonWidth: Float = 74
+    static let buttonSize: Float = 44
     static let iconSize: Float = 22
     static let cornerRadius: Float = 14
 
@@ -141,8 +141,8 @@ public struct SwipeActionsModifier<Content: View>: View {
 
     var openWidth: Float {
         guard !actions.isEmpty else { return 0 }
-        return Float(actions.count) * (SwipeMetrics.buttonWidth + SwipeMetrics.spacing)
-            + SwipeMetrics.spacing
+        return Float(actions.count) * (SwipeMetrics.buttonSize + SwipeMetrics.spacing)
+            + 150
     }
 
     public func toSFNode() -> SFNode {
@@ -155,6 +155,8 @@ public struct SwipeActionsModifier<Content: View>: View {
         NodeFrames.shared.register(swipeID)
         let containerWidth =
             (NodeFrames.shared.frame(for: swipeID)?.inPoints().width) ?? 0
+        let containerHeight =
+            (NodeFrames.shared.frame(for: swipeID)?.inPoints().height) ?? 0
 
         let gesture = DragGesture(axis: .horizontal, minimumDistance: 12)
             .onChanged { value in
@@ -196,21 +198,34 @@ public struct SwipeActionsModifier<Content: View>: View {
                 )
             }
 
+        let revealWidth = open * 0.6
+        let drag = abs(state.offset)
+
+        let revealProgress = drag / max(revealWidth, 1)
+        let fullRevealWidth = revealWidth * Float(actions.count)
+        let extraWidth = max(0, drag - revealWidth)
+
         let row = ZStack(alignment: edge == .trailing ? .trailing : .leading) {
             SwipeActionButtons(
                 actions: actions,
                 edge: edge,
-                revealed: min(1, abs(state.offset) / max(open, 1))
+                revealed: actions.enumerated().map { index, _ in
+                    min(
+                        1,
+                        max(0, revealProgress - Float(index))
+                    )
+                }.reversed(),
+                extraWidth: extraWidth
             )
-
-            RoundedRectangle(
-                cornerRadius: 0
-            )
-            .fill(.background)
-            .mergeable(false)
-            .offset(x: state.offset)
 
             content
+                .background(
+                    RoundedRectangle(
+                        cornerRadius: 0
+                    )
+                    .fill(.background)
+                    .mergeable(false)
+                )
                 .background(
                     RoundedRectangle(
                         cornerRadius: SwipeMetrics.liftCornerRadius * state.lift
@@ -232,55 +247,59 @@ struct SwipeActionButtons: View {
     let actions: [SwipeAction]
     let edge: SwipeEdge
 
-    let revealed: Float
+    let revealed: [Float]
+    let extraWidth: Float
 
     var body: some View {
 
         HStack(alignment: .center, spacing: SwipeMetrics.spacing) {
             if edge == .trailing { Spacer() }
             ForEach(actions.indices, id: \.self) { index in
-                SwipeActionButton(action: actions[index], revealed: revealed)
+                SwipeActionButton(
+                    action: actions[index],
+                    revealed: revealed[index],
+                    width: index == actions.count - 1
+                        ? SwipeMetrics.buttonSize + extraWidth
+                        : SwipeMetrics.buttonSize
+                )
             }
             if edge == .leading { Spacer() }
         }
-        .expands()
-        .padding(
-            EdgeInsets(
-                top: 0, bottom: 0,
-                leading: SwipeMetrics.spacing,
-                trailing: SwipeMetrics.spacing
-            )
-        )
+        .expands(.horizontal)
+        
     }
 }
 
 struct SwipeActionButton: View {
     let action: SwipeAction
     let revealed: Float
+    let width: Float
 
     var body: some View {
         let label = VStack(alignment: .center, spacing: 4) {
             if let icon = action.icon {
-                icon.size(SwipeMetrics.iconSize).foregroundColor(.white)
+                icon
+                    .size(SwipeMetrics.iconSize)
+                    .foregroundColor(.white)
+                    .weight(.fill)
             }
-            Text(action.title)
-                .font(.caption)
-                .foregroundColor(.white)
         }
-
-        .frame(width: SwipeMetrics.buttonWidth, maxHeight: .infinity)
-        .padding(EdgeInsets(top: 10, bottom: 10, leading: 0, trailing: 0))
+            .frame(
+                width: width,
+                height: SwipeMetrics.buttonSize,
+                alignment: .center
+            )
+        //.padding(EdgeInsets(top: 10, bottom: 10, leading: 0, trailing: 0))
 
         return label
             .background(
-                RoundedRectangle(cornerRadius: SwipeMetrics.cornerRadius)
+                RoundedRectangle(cornerRadius: -1)
                     .fill(action.tint)
                     .specular()
                     .mergeable(false)
             )
-
-            .scale(0.6 + 0.4 * revealed)
-            .opacity(revealed)
+            .scale(0.0 + 1.0 * revealed)
+            //.opacity(revealed)
             .onTap { _ in
                 SwipeActionRegistry.shared.closeAll()
                 action.action()
