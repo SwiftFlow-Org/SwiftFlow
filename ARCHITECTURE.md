@@ -447,6 +447,34 @@ inside a tab lands on that tab's own back history. Tab identity is
 position — `Navigator.tabSelection` is an `Int` — which is what removed
 the last generic parameter from the navigation types.
 
+**A sheet brings its own way out.** Tapping the scrim was the only one,
+which leaves a cover — no scrim — with none at all, so the framework now
+draws the chrome: a close button, and a grabber whose strip is what a
+pull-down starts in. Three things about it are the framework's shape
+showing through rather than taste:
+
+- **The pull-down starts in the strip, not anywhere on the sheet.** The
+  router hands a press to the first gesture on its path that claims the
+  axis, so a vertical drag over the whole sheet would beat every vertical
+  scroll inside it. Cooperating instead — sheet moves at the top of the
+  scroll, scroll moves otherwise — is a conversation the router cannot
+  have yet.
+- **The close button's box is the size of the button.** A hit test walks
+  the topmost child whose frame contains the point and stops there, so a
+  full-width box would have taken the grabber's presses with it. Which in
+  turn means the chrome does not fill, which means the stack it is in
+  must be told to (`.expands()`) — a hugging stack sizes itself to
+  whichever child *doesn't* fill it, and would otherwise shrink the sheet
+  to the size of its own close button.
+- **The drag is not an `.animation(_:value:)`.** That modifier ignores a
+  new target while an animation of its own is in flight, so the frame the
+  finger arrives starts one and every frame after it is dropped — the
+  sheet moves 5pt and stops. Exact under the finger and springy after it
+  lets go is two behaviours, so `SheetDrag` owns a spring of its own and
+  is stepped with everything else. Release asks where the drag was
+  *headed* (`predictedEndTranslation`), which is what makes a short flick
+  count the same as a long pull.
+
 **Layers go through `ForEach`.** A push, a pop, a present and a dismiss
 all render as a one-element ForEach keyed by depth (or modal index),
 because ForEach is the only place in this framework that can tell a

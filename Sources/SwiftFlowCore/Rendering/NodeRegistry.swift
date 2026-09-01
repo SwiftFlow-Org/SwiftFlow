@@ -57,6 +57,7 @@ public final class NodeRegistry {
             || LayerTransitionRegistry.shared.hasActiveAnimations
 
             || TabBarAnimator.shared.isAnimating
+            || SheetDrag.shared.isAnimating
     }
 
     public func stepAnimations(dt: Float) {
@@ -71,6 +72,7 @@ public final class NodeRegistry {
         TextFieldRegistry.shared.step(dt: dt)
 
         TabBarAnimator.shared.step(dt: dt)
+        SheetDrag.shared.step(dt: dt)
     }
 
     func registerTap(_ id: UInt32, action: @escaping () -> Void) {

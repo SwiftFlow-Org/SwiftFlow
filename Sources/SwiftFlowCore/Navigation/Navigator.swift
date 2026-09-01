@@ -58,6 +58,10 @@ public final class NavigationStackModel {
         let token: UInt64
 
         let morphSource: UInt32
+
+        /// Whether the framework draws the close button, or the content
+        /// brings its own way out.
+        let showsCloseButton: Bool
     }
 
     nonisolated(unsafe) public private(set) var transition: LayerTransition?
@@ -89,7 +93,8 @@ public final class NavigationStackModel {
     public func present(
         _ view: any View,
         as style: NavPresentation = .sheet,
-        morphingFrom morphSource: String? = nil
+        morphingFrom morphSource: String? = nil,
+        showsCloseButton: Bool = true
     ) -> UInt64 {
         guard style != .push else {
             return push(view)
@@ -99,7 +104,10 @@ public final class NavigationStackModel {
             ?? NodeFrames.shared.lastPressed
         counter &+= 1
         modals.append(
-            Modal(id: counter, view: view, style: style, token: 0, morphSource: source)
+            Modal(
+                id: counter, view: view, style: style, token: 0,
+                morphSource: source, showsCloseButton: showsCloseButton
+            )
         )
         changed()
         return counter
@@ -213,14 +221,16 @@ public final class NavigationStackModel {
     public func present<Value: Sendable>(
         _ view: any View,
         as style: NavPresentation = .sheet,
-        returning: Value.Type
+        returning: Value.Type,
+        showsCloseButton: Bool = true
     ) async -> Value? {
         let token = ModalResults.shared.nextToken()
         counter &+= 1
         modals.append(
             Modal(
                 id: counter, view: view, style: style, token: token,
-                morphSource: NodeFrames.shared.lastPressed
+                morphSource: NodeFrames.shared.lastPressed,
+                showsCloseButton: showsCloseButton
             )
         )
         changed()
@@ -271,9 +281,12 @@ public enum Navigator {
     public static func present(
         _ view: any View,
         as style: NavPresentation = .sheet,
-        morphingFrom morphSource: String? = nil
+        morphingFrom morphSource: String? = nil,
+        showsCloseButton: Bool = true
     ) -> UInt64 {
-        current.present(view, as: style, morphingFrom: morphSource)
+        current.present(
+            view, as: style, morphingFrom: morphSource, showsCloseButton: showsCloseButton
+        )
     }
 
     public static func pop() { current.pop() }
@@ -288,9 +301,12 @@ public enum Navigator {
     public static func present<Value: Sendable>(
         _ view: any View,
         as style: NavPresentation = .sheet,
-        returning: Value.Type
+        returning: Value.Type,
+        showsCloseButton: Bool = true
     ) async -> Value? {
-        await current.present(view, as: style, returning: returning)
+        await current.present(
+            view, as: style, returning: returning, showsCloseButton: showsCloseButton
+        )
     }
 
     public static func dismiss<Value: Sendable>(returning value: Value) {
