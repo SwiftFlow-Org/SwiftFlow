@@ -53,6 +53,8 @@ pub struct SFDesktopCallbacks {
     pub ime_commit: Option<extern "C" fn(*const c_char)>,
 
     pub ime_enabled: Option<extern "C" fn(u32)>,
+
+    pub secondary_click: Option<extern "C" fn(f32, f32, f64)>,
 }
 
 #[no_mangle]

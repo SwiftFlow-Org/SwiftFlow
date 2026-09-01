@@ -226,16 +226,31 @@ fn layout_stack(node: &mut SFNode, available: SFRect) {
                 }
             }
 
-            let content_w = children
+            // A hugging stack whose children are *all* Fill on an axis has
+            // nothing non-deferred to measure — falling back to 0 there would
+            // collapse the stack (and, transitively, every Fill descendant
+            // laid out against it) to a point. Every child asked to fill,
+            // so filling the available space is what "hug" should mean here.
+            let measurable_w: Vec<f32> = children
                 .iter()
                 .filter(|c| !defers(c) && c.sizing_x != SFSizing::Fill)
                 .map(|c| c.frame.width)
-                .fold(0.0_f32, f32::max);
-            let content_h = children
+                .collect();
+            let content_w = if measurable_w.is_empty() {
+                available.width
+            } else {
+                measurable_w.into_iter().fold(0.0_f32, f32::max)
+            };
+            let measurable_h: Vec<f32> = children
                 .iter()
                 .filter(|c| !defers(c) && c.sizing_y != SFSizing::Fill)
                 .map(|c| c.frame.height)
-                .fold(0.0_f32, f32::max);
+                .collect();
+            let content_h = if measurable_h.is_empty() {
+                available.height
+            } else {
+                measurable_h.into_iter().fold(0.0_f32, f32::max)
+            };
 
             node.frame = SFRect::new(
                 available.x,

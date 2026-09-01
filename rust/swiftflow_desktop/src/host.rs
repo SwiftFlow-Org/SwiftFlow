@@ -186,6 +186,17 @@ impl ApplicationHandler for DesktopApp {
                 }
             }
 
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => {
+                if let Some(secondary) = self.callbacks.secondary_click {
+                    let (x, y) = self.cursor;
+                    secondary(x, y, self.now());
+                }
+            }
+
             WindowEvent::MouseWheel { delta, phase, .. } => {
                 if let Some(scroll) = self.callbacks.scroll {
                     let scale = self

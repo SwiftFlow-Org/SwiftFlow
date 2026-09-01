@@ -67,7 +67,6 @@ public final class TextInput {
     }
 
     public func commit(_ text: String) {
-        print(text)
         preedit = nil
         guard let focused, let handler = handlers[focused], !text.isEmpty else { return }
         handler.insert(text)
@@ -75,8 +74,6 @@ public final class TextInput {
     }
 
     public func setPreedit(_ text: String, cursorBegin: Int, cursorEnd: Int) {
-        print("text: \(text)")
-
         if text.isEmpty {
             preedit = nil
         } else {

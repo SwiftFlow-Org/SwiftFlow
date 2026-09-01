@@ -23,7 +23,6 @@ public enum Key: Sendable, Equatable {
     case unicode(UInt32)
 
     public init(raw: UInt32) {
-        print("Raw: \(raw)")
         switch raw {
         case 0:
             self = .other

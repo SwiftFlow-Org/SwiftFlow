@@ -8,12 +8,23 @@ public enum NodeBuilder {
         AnimationTransaction.beginBuild()
 
         GestureRegistry.shared.beginBuild()
+        ContextMenuRegistry.shared.beginBuild()
+        PointerRegistry.shared.beginBuild()
 
         TextInput.shared.beginBuild()
 
         EnvironmentValues.beginBuild()
 
-        let root = buildAny(view)
+        // Only wrapped while a menu is actually up — the same conditional
+        // `ModalHost` uses, so the common case builds the app's tree untouched
+        // and nothing beneath shifts. When a menu is showing the overlay sits
+        // above everything, including modals, which live inside `view`.
+        let root: SFNode
+        if MenuPresenter.shared.isPresenting {
+            root = buildAny(MenuOverlayHost(base: AnyView(erasing: view)))
+        } else {
+            root = buildAny(view)
+        }
 
         AnimationTransaction.endBuild()
         TransitionRegistry.shared.endBuild()
@@ -35,6 +46,8 @@ public enum NodeBuilder {
 
         if let claimed, claimed != identity {
             GestureRegistry.shared.rekey(from: claimed, to: identity)
+            ContextMenuRegistry.shared.rekey(from: claimed, to: identity)
+            PointerRegistry.shared.rekey(from: claimed, to: identity)
             NodeRegistry.shared.rekeyTap(from: claimed, to: identity)
             TextInput.shared.rekey(from: claimed, to: identity)
             LifecycleRegistry.shared.rekey(from: claimed, to: identity)

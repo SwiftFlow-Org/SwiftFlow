@@ -32,6 +32,7 @@ public final class GestureRouter {
         var dragNode: UInt32 = 0
         var pressNode: UInt32 = 0
         var tapNode: UInt32 = 0
+        var pointerNode: UInt32 = 0
 
         var scrolls: [ScrollCandidate] = []
 
@@ -60,6 +61,15 @@ public final class GestureRouter {
         return Point(x: point.x - frame.x, y: point.y - frame.y)
     }
 
+    /// Delivers a raw pointer event to the view captured on `down`.
+    private func firePointer(
+        _ phase: PointerEvent.Phase, on node: UInt32, x: Float, y: Float, scale: Float
+    ) {
+        guard let handler = PointerRegistry.shared.handlers[node] else { return }
+        handler(PointerEvent(phase: phase, location: local(x, y, in: node, scale: scale)))
+        NodeRegistry.shared.needsRender = true
+    }
+
     public func pointerDown(
         x: Float, y: Float, t: Double, path: [UInt32], scrolls: [ScrollCandidate]
     ) {
@@ -77,6 +87,13 @@ public final class GestureRouter {
             }
             if press.pressNode == 0, registry.longPresses[node] != nil { press.pressNode = node }
             if press.tapNode == 0, hasTap(node) { press.tapNode = node }
+            if press.pointerNode == 0, PointerRegistry.shared.handlers[node] != nil {
+                press.pointerNode = node
+            }
+        }
+
+        if press.pointerNode != 0 {
+            firePointer(.down, on: press.pointerNode, x: x, y: y, scale: scale)
         }
 
         if press.tapNode != 0 {
@@ -146,6 +163,10 @@ public final class GestureRouter {
 
         if press.phase == .scroll, press.scrollID != 0 {
             driveScroll(&press, x: x, y: y, t: t)
+        }
+
+        if press.pointerNode != 0 {
+            firePointer(.moved, on: press.pointerNode, x: x, y: y, scale: scale)
         }
 
         self.press = press
@@ -226,6 +247,10 @@ public final class GestureRouter {
         self.press = nil
         let scale = DeviceScale.current > 0 ? DeviceScale.current : 1
         let registry = GestureRegistry.shared
+
+        if press.pointerNode != 0 {
+            firePointer(.up, on: press.pointerNode, x: x, y: y, scale: scale)
+        }
 
         if press.phase == .drag, let gesture = registry.drags[press.dragNode] {
             let value = makeValue(press, x: x, y: y, scale: scale, node: press.dragNode)
