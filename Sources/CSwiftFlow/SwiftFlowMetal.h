@@ -110,6 +110,8 @@ typedef struct SFNode {
     float         glassRefraction;
 
     float         glassInteractive;
+    
+    float         glassClarity;
 
     const uint8_t* text;
     size_t         textLen;
@@ -207,7 +209,17 @@ typedef struct {
 
 SFImageSize sf_register_image(uint32_t id, const uint8_t* bytes, size_t len);
 
+// Uploads a raw BGRA frame under `id` (replacing any prior texture). For live
+// sources — the preview pane — where per-frame PNG encoding is too slow.
+void sf_register_image_raw(uint32_t id, const uint8_t* bgra, size_t len, uint32_t width, uint32_t height);
+
 void sf_unregister_image(uint32_t id);
+
+// Headless renderer: renders into an owned texture read back to the CPU, no
+// window. `sf_read_frame` copies the latest frame (BGRA, width*height*4) into
+// `out` (capacity `cap`) and returns bytes written, or 0 if none.
+void swiftflow_init_offscreen(uint32_t width, uint32_t height);
+size_t sf_read_frame(uint8_t* out, size_t cap);
 
 SFNode* sf_create_empty_root(void);
 
@@ -285,6 +297,8 @@ typedef struct {
     void (*imeCommit)(const char* text);
 
     void (*imeEnabled)(uint32_t enabled);
+
+    void (*secondaryClick)(float x, float y, double t);
 } SFDesktopCallbacks;
 
 void sf_desktop_run(const SFDesktopConfig* config, const SFDesktopCallbacks* callbacks);

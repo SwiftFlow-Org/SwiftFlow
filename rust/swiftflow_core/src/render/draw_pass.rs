@@ -1,8 +1,8 @@
 use crate::draw::*;
-use crate::node::*;
 use crate::layout::alignment_fraction;
-use crate::with_font_system;
+use crate::node::*;
 use crate::types::*;
+use crate::with_font_system;
 
 pub fn draw(node: &SFNode, list: &mut DrawList) {
     draw_inner(node, list, SFPoint { x: 0.0, y: 0.0 }, SFScale::DEFAULT);
@@ -23,6 +23,7 @@ fn draw_edge_effect(node: &SFNode, list: &mut DrawList, origin: SFPoint, w: f32,
         node.progressive_start,
         node.glass_refraction,
         node.glass_interactive,
+        node.glass_clarity,
     );
 }
 
@@ -88,7 +89,6 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
     let node_h = node.frame.height * scale.y;
 
     match node.kind {
-
         SFNodeKind::Empty => {}
 
         SFNodeKind::Spacer => {}
@@ -96,7 +96,6 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
         SFNodeKind::Rect => {
             let frame = SFRect::new(node_origin.x, node_origin.y, node_w, node_h);
             if node.blur_radius > 0.0 {
-
                 list.material(
                     frame,
                     node.corner_radius,
@@ -108,6 +107,7 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
                     node.progressive_start,
                     node.glass_refraction,
                     node.glass_interactive,
+                    node.glass_clarity,
                 );
             } else {
                 list.rect(
@@ -129,8 +129,7 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
                 let device_scale = *crate::ffi::SCALE.lock().unwrap();
                 let physical_size = node.font_size * device_scale;
 
-                let wrap_width =
-                    node.frame.width - node.padding.leading - node.padding.trailing;
+                let wrap_width = node.frame.width - node.padding.leading - node.padding.trailing;
 
                 let (lines, line_height) = with_font_system(|fs| {
                     (
@@ -164,8 +163,7 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
                                 .0
                         });
 
-                        ((wrap_width - line_width).max(0.0)
-                            * alignment_fraction(node.text_align))
+                        ((wrap_width - line_width).max(0.0) * alignment_fraction(node.text_align))
                             * scale.x
                     };
 
@@ -177,7 +175,6 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
                             line_height * scale.y,
                         ),
                         line.clone(),
-
                         node.font_size,
                         scale.y,
                         node.font_weight,
@@ -198,15 +195,13 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
                     SFRect::new(
                         node_origin.x + node.padding.leading * scale.x,
                         node_origin.y + node.padding.top * scale.y,
-                        (node.frame.width - node.padding.leading - node.padding.trailing)
-                            * scale.x,
+                        (node.frame.width - node.padding.leading - node.padding.trailing) * scale.x,
                         (node.frame.height - node.padding.top - node.padding.bottom) * scale.y,
                     ),
                     content,
                     node.font_size,
                     scale.y,
                     node.font_weight,
-
                     SFFontFamily::Icon,
                     node.content_blur,
                     node.color,
@@ -215,7 +210,6 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
         }
 
         SFNodeKind::Stack => {
-
             if node.fill.a > 0.0 && node.edge_effect_height <= 0.0 {
                 list.rect(
                     SFRect::new(node_origin.x, node_origin.y, node_w, node_h),
@@ -243,7 +237,6 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
         }
 
         SFNodeKind::Scroll => {
-
             if node.fill.a > 0.0 && node.edge_effect_height <= 0.0 {
                 list.rect(
                     SFRect::new(node_origin.x, node_origin.y, node_w, node_h),
@@ -286,7 +279,6 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
                     node.color,
                 );
             } else {
-
                 list.rect(
                     frame,
                     node.corner_radius,
@@ -371,7 +363,6 @@ fn node_screen_rect(
 }
 
 enum DeferredDraw<'a> {
-
     Node(&'a SFNode, SFPoint, SFScale),
 
     Rect(SFRect, f32, SFColor, SFBorder, bool),
@@ -385,11 +376,23 @@ fn draw_children_with_merge(
 ) {
     let mut run: Vec<RectCandidate> = Vec::new();
     let mut deferred: Vec<DeferredDraw> = Vec::new();
-    collect_merge_run(children, &mut run, &mut deferred, list, node_origin, scale, false);
+    collect_merge_run(
+        children,
+        &mut run,
+        &mut deferred,
+        list,
+        node_origin,
+        scale,
+        false,
+    );
     flush_run_and_deferred(&mut run, &mut deferred, list);
 }
 
-fn flush_run_and_deferred(run: &mut Vec<RectCandidate>, deferred: &mut Vec<DeferredDraw>, list: &mut DrawList) {
+fn flush_run_and_deferred(
+    run: &mut Vec<RectCandidate>,
+    deferred: &mut Vec<DeferredDraw>,
+    list: &mut DrawList,
+) {
     flush_run(run, list);
     for d in deferred.drain(..) {
         match d {
@@ -411,7 +414,6 @@ fn collect_merge_run<'a>(
     is_nested: bool,
 ) {
     for child in children {
-
         let is_transparent_zstack = child.kind == SFNodeKind::Stack
             && child.axis == SFAxis::Depth
             && child.clip_content == 0.0
@@ -446,7 +448,15 @@ fn collect_merge_run<'a>(
             if !child.children.is_null() && child.children_len > 0 {
                 let grandchildren =
                     unsafe { std::slice::from_raw_parts(child.children, child.children_len) };
-                collect_merge_run(grandchildren, run, deferred, list, child_translate, child_scale, true);
+                collect_merge_run(
+                    grandchildren,
+                    run,
+                    deferred,
+                    list,
+                    child_translate,
+                    child_scale,
+                    true,
+                );
             }
         } else if is_nested {
             deferred.push(DeferredDraw::Node(child, translate, scale));
@@ -488,7 +498,14 @@ fn flush_run(run: &mut Vec<RectCandidate>, list: &mut DrawList) {
         if cluster.len() == 1 || cluster.len() > MAX_MERGE_GROUP {
             for i in cluster {
                 let c = &run[i];
-                list.rect(c.frame, c.corner_radius, c.fill, c.border, c.specular, SFShadow::NONE);
+                list.rect(
+                    c.frame,
+                    c.corner_radius,
+                    c.fill,
+                    c.border,
+                    c.specular,
+                    SFShadow::NONE,
+                );
             }
         } else {
             let members: Vec<&RectCandidate> = cluster.iter().map(|&i| &run[i]).collect();

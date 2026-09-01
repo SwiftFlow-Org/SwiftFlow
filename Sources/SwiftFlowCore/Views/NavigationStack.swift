@@ -35,8 +35,8 @@ enum NavigationBarMetrics {
 
     static let itemTransitionScale: Float = 0.15
 
-    static let itemExitBlur: Float = 8
-
+    static let itemExitBlur: Float = 20
+    
     static let inlineTitleRise: Float = 7
 
     static let inlineTitleBlur: Float = 6
@@ -187,7 +187,7 @@ public struct NavigationStack<Content: View>: View {
     let barID: UInt32
 
     public init(
-        background: Material? = Material(blurRadius: 50, tint: .background, isProgressive: true),
+        background: Material? = Material.ultraThinMaterial,// Material(blurRadius: 50, tint: .background, isProgressive: true),
         progress: Float? = nil,
         @ViewBuilder content: () -> Content
     ) {
@@ -346,9 +346,14 @@ struct NavigationBar: View {
 
     var body: some View {
         if let background {
-            barRow.progressiveBlur(background, start: 0)
+            barRow
+                .background(
+                    Material.hardMaterial
+                )
+                //.progressiveBlur(background, start: 0)
         } else {
             barRow
+                .progressiveBlur(.hardMaterial, start: 0)
         }
     }
 
@@ -362,17 +367,19 @@ struct NavigationBar: View {
         ZStack(alignment: .center) {
             NodeListView(nodes: config.nodes(for: .principal))
             HStack(spacing: NavigationBarMetrics.itemSpacing) {
-
                 NodeListView(nodes: config.nodes(for: .topBarLeading, transitions: false))
+                
                 leaving(config.nodes(for: .topBarLeading, transitions: true), barID &+ 1)
+                
                 Spacer()
+                
                 leaving(config.nodes(for: .topBarTrailing, transitions: true), barID &+ 2)
+                
                 NodeListView(nodes: config.nodes(for: .topBarTrailing, transitions: false))
             }
             .padding(.horizontal, NavigationBarMetrics.horizontalPadding)
             .frame(height: NavigationBarMetrics.barHeight, maxWidth: .infinity)
         }
-
         .padding(.top, SafeArea.top)
         .frame(height: NavigationBarMetrics.collapsedHeight, maxWidth: .infinity)
     }

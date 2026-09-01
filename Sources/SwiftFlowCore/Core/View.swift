@@ -52,6 +52,7 @@ extension SFNode {
 
     static func makeDefault() -> SFNode {
         var node = SFNode()
+        node.noMerge = 1.0
         node.scale = SFScale(x: 1, y: 1)
         return node
     }

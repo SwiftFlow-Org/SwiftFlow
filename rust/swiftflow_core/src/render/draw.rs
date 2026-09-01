@@ -3,7 +3,6 @@ use crate::types::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct SFShadow {
-
     pub radius: f32,
 
     pub opacity: f32,
@@ -27,7 +26,6 @@ pub struct SFClip {
 }
 
 impl SFClip {
-
     pub const NONE: Self = Self {
         rect: SFRect {
             x: 0.0,
@@ -88,7 +86,6 @@ pub struct DrawItem {
 
 #[derive(Debug, Clone)]
 pub enum DrawCommand {
-
     Rect {
         frame: SFRect,
         corner_radius: f32,
@@ -113,7 +110,10 @@ pub enum DrawCommand {
         color: SFColor,
     },
 
-    Fill { frame: SFRect, color: SFColor },
+    Fill {
+        frame: SFRect,
+        color: SFColor,
+    },
 
     MergedRect {
         bounds: SFRect,
@@ -137,6 +137,8 @@ pub enum DrawCommand {
         glass_refraction: f32,
 
         glass_interactive: f32,
+
+        glass_clarity: f32,
     },
 
     Image {
@@ -273,6 +275,7 @@ impl DrawList {
         progressive_start: f32,
         glass_refraction: f32,
         glass_interactive: f32,
+        glass_clarity: f32,
     ) {
         self.push(DrawCommand::Material {
             frame,
@@ -285,6 +288,7 @@ impl DrawList {
             progressive_start,
             glass_refraction,
             glass_interactive,
+            glass_clarity,
         });
     }
 

@@ -7,30 +7,36 @@ public struct Glass: Sendable {
 
     public let refraction: Float
 
+    public let clarity: Float
+
     public let isInteractive: Bool
 
     public init(
         blurRadius: Float,
         tint: Color,
         refraction: Float,
+        clarity: Float,
         isInteractive: Bool = false
     ) {
         self.blurRadius = blurRadius
         self.tint = tint
         self.refraction = refraction
+        self.clarity = clarity
         self.isInteractive = isInteractive
     }
 
     public static let regular = Glass(
-        blurRadius: 24,
+        blurRadius: 0.4,
         tint: Color(r: 1, g: 1, b: 1, a: 0.10),
-        refraction: 18
+        refraction: 8,
+        clarity: 1.0
     )
 
     public static let clear = Glass(
         blurRadius: 0.5,
         tint: Color(r: 1, g: 1, b: 1, a: 0.04),
-        refraction: 18
+        refraction: 8,
+        clarity: 0.85
     )
 
     /// Tints the glass.
@@ -39,6 +45,7 @@ public struct Glass: Sendable {
             blurRadius: blurRadius,
             tint: color,
             refraction: refraction,
+            clarity: clarity,
             isInteractive: isInteractive
         )
     }
@@ -49,6 +56,7 @@ public struct Glass: Sendable {
             blurRadius: blurRadius,
             tint: tint,
             refraction: refraction,
+            clarity: clarity,
             isInteractive: enabled
         )
     }
@@ -76,6 +84,8 @@ extension GlassEffectModifier {
 
         backdrop.glassRefraction = glass.refraction * DeviceScale.current
         backdrop.glassInteractive = isPressed(fg) ? 1 : 0
+        backdrop.glassClarity = glass.clarity
+
 
         backdrop.specular = 1
         backdrop.cornerRadius = cornerRadius ?? 0

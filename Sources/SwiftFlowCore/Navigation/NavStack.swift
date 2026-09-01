@@ -19,7 +19,7 @@ public struct NavStack<Root: View>: View {
 
     public init(
         stack: NavigationStackModel? = nil,
-        background: Material? = Material(blurRadius: 50, tint: .background, isProgressive: true),
+        background: Material? = Material.ultraThinMaterial, //Material(blurRadius: 50, tint: .background, isProgressive: true),
         transition: NavTransition = .standard,
         screenBackground: Color = .background,
         interactiveBack: Bool = true,
@@ -119,7 +119,6 @@ extension NavStack {
         AnyView(
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
                 .clipShape(RoundedRectangle(cornerRadius: DeviceMetrics.screenCornerRadius))
                 .background(
                     RoundedRectangle(cornerRadius: DeviceMetrics.screenCornerRadius)
@@ -127,7 +126,6 @@ extension NavStack {
                         .mergeable(false)
                         .shadow(radius: 18, opacity: 0.3)
                 )
-
                 .offset(x: offsetX)
         )
     }

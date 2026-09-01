@@ -135,6 +135,7 @@ struct MaterialGpuParams {
     params: [f32; 4],
 
     params2: [f32; 4],
+    params3: [f32; 4],
     clip_rect: [f32; 4],
     clip_radii: [f32; 4],
 }
@@ -151,6 +152,7 @@ impl MaterialGpuParams {
         progressive_start: f32,
         glass_refraction: f32,
         glass_interactive: f32,
+        glass_clarity: f32,
         clip: SFClip,
     ) -> Self {
         Self {
@@ -170,7 +172,13 @@ impl MaterialGpuParams {
                 blur_radius,
                 if specular { 1.0 } else { 0.0 },
             ],
-            params2: [progressive, progressive_start, glass_refraction, glass_interactive],
+            params2: [
+                progressive,
+                progressive_start,
+                glass_refraction,
+                glass_interactive,
+            ],
+            params3: [glass_clarity, 0.0, 0.0, 0.0],
         }
     }
 }
@@ -235,8 +243,9 @@ fn content_mode_uv(
 struct ImageTexture {
     width: u32,
     height: u32,
+    format: wgpu::TextureFormat,
     bind_group: wgpu::BindGroup,
-    _texture: wgpu::Texture,
+    texture: wgpu::Texture,
 }
 
 const MAX_IMAGES: usize = 256;
@@ -257,10 +266,7 @@ enum Batch {
     Text(std::ops::Range<usize>),
     Material(usize),
 
-    Image {
-        index: usize,
-        id: u32,
-    },
+    Image { index: usize, id: u32 },
 }
 
 #[repr(C)]
@@ -287,7 +293,8 @@ pub struct SFSurfaceDescriptor {
 struct WgpuBackend {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    surface: wgpu::Surface<'static>,
+    // None when rendering offscreen (the preview host's headless path).
+    surface: Option<wgpu::Surface<'static>>,
     config: wgpu::SurfaceConfiguration,
 
     rect_pipeline: wgpu::RenderPipeline,
@@ -343,6 +350,8 @@ struct WgpuBackend {
     max_images: usize,
 
     current_frame: Option<wgpu::SurfaceTexture>,
+    // Present, and the final target, only in the headless path.
+    offscreen: Option<Offscreen>,
     rect_instances: Vec<RectInstance>,
     merged_instances: Vec<MergedRectInstance>,
     materials: Vec<MaterialGpuParams>,
@@ -352,11 +361,62 @@ struct WgpuBackend {
     text_commands: Vec<DrawItem>,
 }
 
+/// The headless render target: an owned texture the final pass draws into, plus
+/// a buffer the texture is copied to and mapped so the CPU can read the frame.
+struct Offscreen {
+    output_texture: wgpu::Texture,
+    output_view: wgpu::TextureView,
+    buffer: wgpu::Buffer,
+    width: u32,
+    height: u32,
+    // Rows in `buffer` are padded to COPY_BYTES_PER_ROW_ALIGNMENT (256).
+    padded_bytes_per_row: u32,
+    // The most recent frame, rows unpadded, tightly packed BGRA (width*height*4).
+    pixels: Vec<u8>,
+}
+
+fn align_bytes_per_row(width: u32) -> u32 {
+    let unpadded = width * 4;
+    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+    ((unpadded + align - 1) / align) * align
+}
+
+fn make_offscreen(device: &wgpu::Device, width: u32, height: u32) -> Offscreen {
+    let width = width.max(1);
+    let height = height.max(1);
+    let output_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("offscreen_output"),
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Bgra8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let padded_bytes_per_row = align_bytes_per_row(width);
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("offscreen_readback"),
+        size: (padded_bytes_per_row * height) as u64,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    Offscreen {
+        output_texture,
+        output_view,
+        buffer,
+        width,
+        height,
+        padded_bytes_per_row,
+        pixels: Vec::new(),
+    }
+}
+
 const MAX_RECTS: usize = 4096;
 const MAX_MERGED_INSTANCES: usize = 512;
 
 enum SurfaceSource {
-
     #[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
     Raw(wgpu::SurfaceTargetUnsafe),
     Owned(wgpu::SurfaceTarget<'static>),
@@ -367,13 +427,13 @@ fn preferred_backends() -> wgpu::Backends {
 }
 
 impl WgpuBackend {
-    async fn new(source: SurfaceSource, width: u32, height: u32) -> Self {
+    async fn new(source: Option<SurfaceSource>, width: u32, height: u32) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: preferred_backends(),
             ..Default::default()
         });
 
-        let surface = match source {
+        let surface = source.map(|source| match source {
             SurfaceSource::Raw(target) => unsafe {
                 instance
                     .create_surface_unsafe(target)
@@ -382,16 +442,15 @@ impl WgpuBackend {
             SurfaceSource::Owned(target) => instance
                 .create_surface(target)
                 .expect("could not create a surface from the supplied window"),
-        };
+        });
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
+                compatible_surface: surface.as_ref(),
                 force_fallback_adapter: false,
             })
             .await
-
             .expect(
                 "no compatible GPU adapter found. SwiftFlow needs Vulkan (Linux/Windows), \
                  Metal (macOS/iOS) or DX12 (Windows); on Linux check that a Vulkan driver \
@@ -403,28 +462,38 @@ impl WgpuBackend {
             .await
             .unwrap();
 
-        let caps = surface.get_capabilities(&adapter);
-        sflog!(
-            "surface caps: formats={:?} alpha={:?} present={:?}",
-            caps.formats,
-            caps.alpha_modes,
-            caps.present_modes
-        );
-        let surface_format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| *f == wgpu::TextureFormat::Bgra8Unorm)
-            .or_else(|| caps.formats.iter().copied().find(|f| !f.is_srgb()))
-            .or_else(|| caps.formats.first().copied())
-            .expect("the surface reported no supported texture formats");
-
-        let alpha_mode = caps
-            .alpha_modes
-            .iter()
-            .copied()
-            .find(|m| *m == wgpu::CompositeAlphaMode::Opaque)
-            .unwrap_or(caps.alpha_modes[0]);
+        // Everything renders in Bgra8Unorm; offscreen has no surface caps to ask,
+        // and the surface path already prefers this format anyway.
+        let (surface_format, alpha_mode) = match &surface {
+            Some(surface) => {
+                let caps = surface.get_capabilities(&adapter);
+                sflog!(
+                    "surface caps: formats={:?} alpha={:?} present={:?}",
+                    caps.formats,
+                    caps.alpha_modes,
+                    caps.present_modes
+                );
+                let format = caps
+                    .formats
+                    .iter()
+                    .copied()
+                    .find(|f| *f == wgpu::TextureFormat::Bgra8Unorm)
+                    .or_else(|| caps.formats.iter().copied().find(|f| !f.is_srgb()))
+                    .or_else(|| caps.formats.first().copied())
+                    .expect("the surface reported no supported texture formats");
+                let alpha = caps
+                    .alpha_modes
+                    .iter()
+                    .copied()
+                    .find(|m| *m == wgpu::CompositeAlphaMode::Opaque)
+                    .unwrap_or(caps.alpha_modes[0]);
+                (format, alpha)
+            }
+            None => (
+                wgpu::TextureFormat::Bgra8Unorm,
+                wgpu::CompositeAlphaMode::Opaque,
+            ),
+        };
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -432,11 +501,18 @@ impl WgpuBackend {
             width,
             height,
             present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: alpha_mode,
+            alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
-        surface.configure(&device, &config);
+        if let Some(surface) = &surface {
+            surface.configure(&device, &config);
+        }
+        let offscreen = if surface.is_none() {
+            Some(make_offscreen(&device, width, height))
+        } else {
+            None
+        };
 
         let globals = Globals {
             resolution: [width as f32, height as f32],
@@ -962,6 +1038,7 @@ impl WgpuBackend {
             max_images: MAX_IMAGES,
             max_instances: MAX_RECTS,
             current_frame: None,
+            offscreen,
             rect_instances: Vec::with_capacity(MAX_RECTS),
             materials: Vec::with_capacity(MAX_MATERIALS),
             images: Vec::new(),
@@ -1112,41 +1189,90 @@ fn make_sample_bg(
 }
 
 impl WgpuBackend {
-
     fn reconfigure(&mut self, width: u32, height: u32) {
-
         if width == 0 || height == 0 {
             return;
         }
         self.config.width = width;
         self.config.height = height;
-        self.surface.configure(&self.device, &self.config);
+        if let Some(surface) = &self.surface {
+            surface.configure(&self.device, &self.config);
+        }
         self.update_globals(width, height);
         self.resize_offscreen_targets(width, height);
+        if self.offscreen.is_some() {
+            self.offscreen = Some(make_offscreen(&self.device, width, height));
+        }
     }
 
     fn acquire_frame(&mut self, width: u32, height: u32) -> Option<wgpu::SurfaceTexture> {
-        match self.surface.get_current_texture() {
+        if self.surface.is_none() {
+            return None; // offscreen: the target is an owned texture, not a swapchain
+        }
+        let first = self.surface.as_ref().unwrap().get_current_texture();
+        match first {
             Ok(frame) if !frame.suboptimal => Some(frame),
             Ok(frame) => {
-
                 drop(frame);
                 self.reconfigure(width, height);
-                self.surface.get_current_texture().ok()
+                self.surface.as_ref().unwrap().get_current_texture().ok()
             }
             Err(wgpu::SurfaceError::Outdated) | Err(wgpu::SurfaceError::Lost) => {
                 self.reconfigure(width, height);
-                self.surface.get_current_texture().ok()
+                self.surface.as_ref().unwrap().get_current_texture().ok()
             }
             Err(_) => None,
         }
     }
+
+    /// Copies the just-rendered offscreen texture into the readback buffer, maps
+    /// it, and unpads rows into `pixels`. Blocks on the copy — the preview host
+    /// renders a frame then reads it, so latency here is fine.
+    fn read_back(&mut self) {
+        let Some(off) = self.offscreen.as_ref() else { return };
+        let (width, height, padded) = (off.width, off.height, off.padded_bytes_per_row);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        encoder.copy_texture_to_buffer(
+            wgpu::ImageCopyTexture {
+                texture: &off.output_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyBuffer {
+                buffer: &off.buffer,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        );
+        self.queue.submit([encoder.finish()]);
+
+        let off = self.offscreen.as_mut().unwrap();
+        let slice = off.buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device.poll(wgpu::Maintain::Wait);
+        {
+            let data = slice.get_mapped_range();
+            let row = (width * 4) as usize;
+            off.pixels.clear();
+            off.pixels.reserve(row * height as usize);
+            for y in 0..height as usize {
+                let start = y * padded as usize;
+                off.pixels.extend_from_slice(&data[start..start + row]);
+            }
+        }
+        off.buffer.unmap();
+    }
 }
 
 impl SFBackend for WgpuBackend {
-
     fn begin_frame(&mut self, width: u32, height: u32) {
-
         let forced = FORCE_RECONFIGURE.swap(false, Ordering::Relaxed);
         if forced || self.config.width != width || self.config.height != height {
             self.reconfigure(width, height);
@@ -1163,7 +1289,6 @@ impl SFBackend for WgpuBackend {
 
     fn submit(&mut self, list: &DrawList) {
         for item in &list.commands {
-
             let clip = item.clip;
             match &item.command {
                 DrawCommand::Rect {
@@ -1240,6 +1365,7 @@ impl SFBackend for WgpuBackend {
                     progressive_start,
                     glass_refraction,
                     glass_interactive,
+                    glass_clarity,
                 } => {
                     if self.materials.len() >= self.max_materials {
                         continue;
@@ -1255,13 +1381,13 @@ impl SFBackend for WgpuBackend {
                         *progressive_start,
                         *glass_refraction,
                         *glass_interactive,
+                        *glass_clarity,
                         clip,
                     ));
 
                     self.batches.push(Batch::Material(self.materials.len() - 1));
                 }
                 DrawCommand::Text { .. } => {
-
                     self.text_commands.push(item.clone());
                     let idx = self.text_commands.len() - 1;
                     match self.batches.last_mut() {
@@ -1307,10 +1433,10 @@ impl SFBackend for WgpuBackend {
     }
 
     fn end_frame(&mut self) {
-        let frame = match self.current_frame.take() {
-            Some(f) => f,
-            None => return,
-        };
+        let surface_frame = self.current_frame.take();
+        if surface_frame.is_none() && self.offscreen.is_none() {
+            return;
+        }
 
         const CLEAR_COLOR: wgpu::Color = wgpu::Color {
             r: 22.0 / 255.0,
@@ -1357,9 +1483,17 @@ impl SFBackend for WgpuBackend {
                 .write_buffer(&self.image_buffer, 0, bytemuck::cast_slice(&self.images));
         }
 
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        // The final composite target: the swapchain image, or the owned
+        // offscreen texture in the headless path.
+        let view = match &surface_frame {
+            Some(frame) => frame.texture.create_view(&wgpu::TextureViewDescriptor::default()),
+            None => self
+                .offscreen
+                .as_ref()
+                .unwrap()
+                .output_texture
+                .create_view(&wgpu::TextureViewDescriptor::default()),
+        };
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
@@ -1441,7 +1575,6 @@ impl SFBackend for WgpuBackend {
                                 );
                             }
                             Batch::Image { index, id } => {
-
                                 if let Some(tex) = self.image_textures.get(id) {
                                     p.set_pipeline(&self.image_pipeline);
                                     p.set_bind_group(0, &self.globals_bg, &[]);
@@ -1454,7 +1587,6 @@ impl SFBackend for WgpuBackend {
                     }
                 }
                 Run::Material(idx) => {
-
                     for (label, src, dst) in [
                         ("halve_1_pass", &self.scene_sample_bg, &self.pyr_half_view),
                         (
@@ -1486,7 +1618,6 @@ impl SFBackend for WgpuBackend {
                     }
 
                     for _ in 0..BLUR_ITERATIONS {
-
                         {
                             let mut p = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                                 label: Some("blur_h_pass"),
@@ -1566,14 +1697,50 @@ impl SFBackend for WgpuBackend {
         }
 
         self.queue.submit([encoder.finish()]);
-        frame.present();
+        match surface_frame {
+            Some(frame) => frame.present(),
+            None => self.read_back(),
+        }
+    }
+
+    fn read_frame(&self, out: *mut u8, cap: usize) -> usize {
+        let Some(off) = self.offscreen.as_ref() else { return 0 };
+        if out.is_null() || off.pixels.is_empty() {
+            return 0;
+        }
+        let n = off.pixels.len().min(cap);
+        unsafe { std::ptr::copy_nonoverlapping(off.pixels.as_ptr(), out, n) };
+        n
     }
 
     fn upload_image(&mut self, image_id: u32, rgba: &[u8], width: u32, height: u32) {
+        self.upload_texture_impl(image_id, rgba, width, height, wgpu::TextureFormat::Rgba8Unorm);
+    }
+
+    fn upload_image_bgra(&mut self, image_id: u32, bgra: &[u8], width: u32, height: u32) {
+        // A Bgra8Unorm texture is sampled as RGBA in-shader (hardware swizzle),
+        // so offscreen preview frames (already BGRA) upload with no CPU convert.
+        self.upload_texture_impl(image_id, bgra, width, height, wgpu::TextureFormat::Bgra8Unorm);
+    }
+
+    fn drop_image(&mut self, image_id: u32) {
+        self.image_textures.remove(&image_id);
+    }
+}
+
+impl WgpuBackend {
+    fn upload_texture_impl(
+        &mut self,
+        image_id: u32,
+        bytes: &[u8],
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) {
         if image_id == 0 || width == 0 || height == 0 {
             return;
         }
-        if rgba.len() < (width as usize) * (height as usize) * 4 {
+        if bytes.len() < (width as usize) * (height as usize) * 4 {
             return;
         }
 
@@ -1582,13 +1749,38 @@ impl SFBackend for WgpuBackend {
             height,
             depth_or_array_layers: 1,
         };
+
+        // Reuse the existing texture when it matches — critical for a live
+        // stream (the preview pane), where allocating a fresh multi-MB texture
+        // every frame would churn GPU memory until nothing displays.
+        if let Some(existing) = self.image_textures.get(&image_id) {
+            if existing.width == width && existing.height == height && existing.format == format {
+                self.queue.write_texture(
+                    wgpu::ImageCopyTexture {
+                        texture: &existing.texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    bytes,
+                    wgpu::ImageDataLayout {
+                        offset: 0,
+                        bytes_per_row: Some(width * 4),
+                        rows_per_image: Some(height),
+                    },
+                    size,
+                );
+                return;
+            }
+        }
+
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("image"),
             size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -1599,7 +1791,7 @@ impl SFBackend for WgpuBackend {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            rgba,
+            bytes,
             wgpu::ImageDataLayout {
                 offset: 0,
                 bytes_per_row: Some(width * 4),
@@ -1633,20 +1825,16 @@ impl SFBackend for WgpuBackend {
             ImageTexture {
                 width,
                 height,
+                format,
                 bind_group,
-                _texture: texture,
+                texture,
             },
         );
-    }
-
-    fn drop_image(&mut self, image_id: u32) {
-        self.image_textures.remove(&image_id);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn swiftflow_init(surface: SFSurfaceDescriptor, width: u32, height: u32) {
-
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         let target = match surface.kind {
@@ -1675,9 +1863,20 @@ pub fn init_with_target(target: wgpu::SurfaceTarget<'static>, width: u32, height
     init_with_source(SurfaceSource::Owned(target), width, height);
 }
 
+/// Headless init for the preview host: renders into an owned texture that is
+/// read back to the CPU each frame (see `sf_read_frame`), with no window.
+#[no_mangle]
+pub extern "C" fn swiftflow_init_offscreen(width: u32, height: u32) {
+    pollster::block_on(async move {
+        let backend = WgpuBackend::new(None, width, height).await;
+        register_backend(Box::new(backend));
+        sf_init(width, height);
+    });
+}
+
 fn init_with_source(source: SurfaceSource, width: u32, height: u32) {
     pollster::block_on(async move {
-        let backend = WgpuBackend::new(source, width, height).await;
+        let backend = WgpuBackend::new(Some(source), width, height).await;
         register_backend(Box::new(backend));
         sf_init(width, height);
     });

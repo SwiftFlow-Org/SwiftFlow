@@ -35,8 +35,7 @@ public struct NavBarButtonStyle: ButtonStyle {
             .padding(.vertical, 8)
             .padding(.horizontal, 7)
             .frame(width: 44, height: 44)
-            .glassEffect(.clear, in: Circle())
-
+            .glassEffect(.regular, in: Circle())
             .scale(configuration.isPressed ? 1.10 : 1.0)
             .animation(.spring(), id: configuration.id)
     }

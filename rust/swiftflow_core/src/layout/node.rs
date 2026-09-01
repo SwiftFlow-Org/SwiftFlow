@@ -33,7 +33,6 @@ pub enum SFAlignment {
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SFContentMode {
-
     Fit = 0,
 
     Fill = 1,
@@ -44,7 +43,6 @@ pub enum SFContentMode {
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub enum SFFontFamily {
-
     #[default]
     Sans = 0,
 
@@ -79,7 +77,6 @@ impl SFFontFamily {
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SFSizing {
-
     Hug = 0,
 
     Fill = 1,
@@ -127,6 +124,8 @@ pub struct SFNode {
 
     pub glass_interactive: f32,
 
+    pub glass_clarity: f32,
+
     pub text: *const u8,
     pub text_len: usize,
     pub font_size: f32,
@@ -170,7 +169,6 @@ pub struct SFNode {
 }
 
 impl SFNode {
-
     pub fn set_sizing(&mut self, sizing: SFSizing) {
         self.sizing_x = sizing;
         self.sizing_y = sizing;
@@ -208,6 +206,7 @@ impl SFNode {
             progressive_start: 0.5,
             glass_refraction: 0.0,
             glass_interactive: 0.0,
+            glass_clarity: 0.0,
             text: std::ptr::null(),
             text_len: 0,
             font_size: 16.0,

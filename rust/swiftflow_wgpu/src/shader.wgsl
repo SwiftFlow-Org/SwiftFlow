@@ -106,42 +106,38 @@ fn sd_rounded_rect_normal(p: vec2<f32>, size: vec2<f32>, r: f32, n: f32) -> vec2
     return g / len;
 }
 
-const RIM_WIDTH: f32       = 3.5;
+const RIM_WIDTH: f32       = 2.5;
 const RIM_INTENSITY: f32   = 0.4;
 const RIM_POWER: f32       = 2.0;
 const RIM_COLOR: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
 
+const GLASS_EDGE_BAND: f32 = 12.0;
 const GLASS_MIN_THICKNESS: f32 = 12.0;
-
-const GLASS_RIM_SHARPNESS: f32 = 0.85;
-
+const GLASS_RIM_SHARPNESS: f32 = 0.95;
 const GLASS_BLUR_DISPLACE: f32 = 0.35;
-
 const GLASS_ADAPTIVE: f32 = 0.25;
-
-const GLASS_PRESS_REFRACTION: f32 = 0.6;
-
+const GLASS_PRESS_REFRACTION: f32 = 0.25;
 const GLASS_PRESS_RIM: f32 = 0.8;
-
-const GLASS_IOR: f32 = 1.5;
-
+const GLASS_IOR: f32 = 1.55;
 const GLASS_ETA: f32 = 1.0 / GLASS_IOR;
-
-const GLASS_DISPERSION: f32 = 0.02;
+const GLASS_DISPERSION: f32 = 0.04;
 
 const FRESNEL_POWER: f32 = 5.0;
-const FRESNEL_INTENSITY: f32 = 0.35;
+const FRESNEL_INTENSITY: f32 = 0.04;
 
 const GLARE_DIR: vec2<f32> = vec2<f32>(-0.70710678, -0.70710678);
 const GLARE_POWER: f32 = 6.0;
-const GLARE_INTENSITY: f32 = 0.85;
+const GLARE_INTENSITY: f32 = 1.0;
 
 const GLARE_BACK: f32 = 0.3;
 
 const SHADOW_POWER: f32 = 3.0;
-const SHADOW_DEPTH: f32 = 0.3;
+const SHADOW_DEPTH: f32 = 0.05;
 
-const GLASS_VIBRANCY: f32 = 0.35;
+const GLASS_VIBRANCY: f32 = 0.0;
+
+const GLASS_REFRACT_BAND: f32 = 28.0;   // width of the edge band, px — the "refraction band"
+const GLASS_REFRACT_PULL: f32 = 1.3;    // how far past the edge it grabs content (bigger = more squish)
 
 fn bevel_normal(outward: vec2<f32>, t: f32) -> vec3<f32> {
     let u = 1.0 - clamp(t, 0.0, 1.0);
@@ -439,6 +435,7 @@ struct MaterialGpu {
     border_color : vec4<f32>,
     params       : vec4<f32>,
     params2      : vec4<f32>,
+    params3      : vec4<f32>,
     clip_rect    : vec4<f32>,
     clip_radii   : vec4<f32>,
 };
@@ -568,7 +565,7 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
 
     let glass = refraction_active(refraction);
 
-    let bevel = max(corner_radius, GLASS_MIN_THICKNESS);
+    let bevel = min(min(half.x, half.y), GLASS_EDGE_BAND);
 
     let depth = clamp(-dist / bevel, 0.0, 1.0);
 
@@ -578,19 +575,18 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
 
     let n3 = bevel_normal(normal, depth);
     let screen_uv = in.position.xy / globals.resolution;
-    let offset = refract_offset(n3, GLASS_ETA) * bend / globals.resolution;
 
-    let sharp_uv = clamp(screen_uv + offset, vec2<f32>(0.0), vec2<f32>(1.0));
-    let soft_uv  = clamp(screen_uv + offset * GLASS_BLUR_DISPLACE, vec2<f32>(0.0), vec2<f32>(1.0));
+    let base_off = refract_offset(n3, GLASS_ETA) * bend / globals.resolution;
+    let off_r    = refract_offset(n3, GLASS_ETA * (1.0 + GLASS_DISPERSION)) * bend / globals.resolution;
+    let off_b    = refract_offset(n3, GLASS_ETA * (1.0 - GLASS_DISPERSION)) * bend / globals.resolution;
 
-    let uv_r = clamp(
-        screen_uv + refract_offset(n3, GLASS_ETA * (1.0 + GLASS_DISPERSION)) * bend / globals.resolution,
-        vec2<f32>(0.0), vec2<f32>(1.0)
-    );
-    let uv_b = clamp(
-        screen_uv + refract_offset(n3, GLASS_ETA * (1.0 - GLASS_DISPERSION)) * bend / globals.resolution,
-        vec2<f32>(0.0), vec2<f32>(1.0)
-    );
+    let n2 = normalize(normal);
+
+    let sharp_uv = clamp(screen_uv + base_off, vec2<f32>(0.0), vec2<f32>(1.0));
+    let soft_uv  = clamp(screen_uv + base_off * GLASS_BLUR_DISPLACE, vec2<f32>(0.0), vec2<f32>(1.0));
+    let uv_r     = clamp(screen_uv + off_r, vec2<f32>(0.0), vec2<f32>(1.0));
+    let uv_b     = clamp(screen_uv + off_b, vec2<f32>(0.0), vec2<f32>(1.0));
+
     let sharp = vec3<f32>(
         textureSample(scene_tex, blur_sampler, uv_r).r,
         textureSample(scene_tex, blur_sampler, sharp_uv).g,
@@ -598,10 +594,28 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     );
     let soft = textureSample(blur_tex, blur_sampler, soft_uv).rgb;
 
-    let backdrop_rgb = mix(soft, sharp, edge * GLASS_RIM_SHARPNESS * glass);
+    let clarity = inst.params3.x;
+    let backdrop_rgb = mix(soft, sharp, max(clarity, edge * GLASS_RIM_SHARPNESS) * glass);
 
-    let bd_luma = dot(backdrop_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let vibrant = mix(vec3<f32>(bd_luma), backdrop_rgb, 1.0 + GLASS_VIBRANCY * glass);
+    // Reflect across the edge: dist<0 inside, so -2*dist moves outward by 2|dist|,
+    // sampling the content the same distance beyond the edge and bringing it in
+    // inverted. Fills the whole bevel band — that's the wide meniscus.
+    // Edge factor: 0 in the flat interior, ramps to 1 at the very rim.
+    let eb = 1.0 - clamp(-dist / GLASS_REFRACT_BAND, 0.0, 1.0);
+
+    // Pull the sample OUTWARD (n2 is the outward normal) so the band shows the
+    // content just outside the pill, compressed inward — the iOS lens edge.
+    // eb*eb ramps it nonlinearly so the squish concentrates near the rim.
+    let refract_uv = clamp(
+        screen_uv - n2 * (eb * eb) * GLASS_REFRACT_BAND * GLASS_REFRACT_PULL / globals.resolution,
+        vec2<f32>(0.0), vec2<f32>(1.0)
+    );
+    let refracted = textureSample(scene_tex, blur_sampler, refract_uv).rgb;
+
+    let backdrop_edged = mix(backdrop_rgb, refracted, smoothstep(0.0, 0.35, eb));
+
+    let bd_luma = dot(backdrop_edged, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let vibrant = mix(vec3<f32>(bd_luma), backdrop_edged, 1.0 + GLASS_VIBRANCY * glass);
 
     let luma = dot(soft, vec3<f32>(0.2126, 0.7152, 0.0722));
     let adaptive = mix(inst.tint.rgb, vec3<f32>(luma), GLASS_ADAPTIVE * glass);
@@ -623,9 +637,9 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     let toward = max(dot(normal, GLARE_DIR), 0.0);
     let away   = max(dot(normal, -GLARE_DIR), 0.0);
     let glare  = pow(toward, GLARE_POWER) + pow(away, GLARE_POWER) * GLARE_BACK;
-    let lit    = fresnel * (FRESNEL_INTENSITY + glare * GLARE_INTENSITY);
+    let lit    = fresnel * FRESNEL_INTENSITY + glare * GLARE_INTENSITY;
 
-    let highlight = mix(trim, lit, glass) * specular * rim_gain;
+    let highlight = mix(trim, lit * rim_mask, glass) * specular * rim_gain;
     color = vec4<f32>(color.rgb + RIM_COLOR * highlight * fill_mask, color.a);
 
     let shade = fresnel * pow(away, SHADOW_POWER) * SHADOW_DEPTH * specular * glass;
@@ -633,7 +647,6 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
 
     let progressive = inst.params2.x;
     if (progressive > 0.0) {
-
         let start = clamp(inst.params2.y, 0.0, 0.999);
         let ramp  = 1.0 - smoothstep(start, 1.0, in.uv.y);
         color = vec4<f32>(color.rgb, color.a * mix(1.0, ramp, progressive));
