@@ -393,6 +393,8 @@ the sum of its children.
 
 ```swift
 .background<V: View>(_ background: V)
+.overlay<V: View>(_ overlay: V, alignment: Alignment = .center)
+.stroke(_ color: Color, lineWidth: Float = 1)
 .cornerRadius(_ radius: Float)
 .clipShape<S: View>(_ shape: S)
 .opacity(_ value: Float)
@@ -404,11 +406,43 @@ the sum of its children.
 .font(_:) .fontWeight(_:) .fontDesign(_:) .foregroundColor(_:)
 ```
 
-**Differs:** `.padding()` and `.frame()` build a real node; everything
-else writes a field on the existing one. So `.padding(20).frame(width:
-200)` is 200 wide overall and `.frame(width: 200).padding(20)` is 240 —
-but `.padding(10).cornerRadius(4)` and `.cornerRadius(4).padding(10)` are
-the same tree, where SwiftUI's differ.
+`.overlay()` is `.background()` the other way up: the decoration is
+measured against the view rather than the view against it, so the view's
+own size is what the pair reports. A shape fills it exactly (shapes size
+Fill), and anything that hugs — a badge, a count — sits inside it at
+`alignment`.
+
+`.stroke()` lines the inside of the view's edge, following whatever
+corner radius the view already carries:
+
+```swift
+RoundedRectangle(cornerRadius: 12).fill(.surface).stroke(.accent, lineWidth: 2)
+
+Row().background(.surface).cornerRadius(12).stroke(.border)
+```
+
+Because the line is drawn *inside* the bounds it never grows the view or
+bleeds into a neighbour, and `.cornerRadius()` before or after `.stroke()`
+is the same thing — both write the same field.
+
+The radius it follows is the one on **this** view, not one on a shape
+behind it. `.background(RoundedRectangle(cornerRadius: 12).fill(.surface))`
+leaves the radius on the background child, so a `.stroke()` after it comes
+out square. Either round the view itself, as above, or overlay the shape
+you actually want outlined:
+
+```swift
+Avatar().overlay(Circle().stroke(.accent, lineWidth: 2))
+```
+
+**Differs:** `.padding()`, `.frame()`, `.background()` and `.overlay()`
+build a real node; most of the rest write a field on the existing one. So
+`.padding(20).frame(width: 200)` is 200 wide overall and `.frame(width:
+200).padding(20)` is 240 — but `.padding(10).cornerRadius(4)` and
+`.cornerRadius(4).padding(10)` are the same tree, where SwiftUI's differ.
+
+**Differs:** neither `.overlay()` nor `.background()` clips. A decoration
+larger than what it decorates still draws — see `.clipShape()` below.
 
 **Differs:** clipping is opt-in and does not clip. `.clipShape()` rounds
 coextensive children; a child that overflows its parent still draws. See

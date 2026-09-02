@@ -425,6 +425,125 @@ extension View {
     }
 }
 
+/// Wraps `content` in a depth stack with `decoration` drawn in front of it.
+///
+/// The wrapper takes the content's sizing, so the pair measures as the content
+/// alone and the decoration lays out against that — a filling decoration
+/// covers it exactly, a hugging one aligns inside it.
+private func layered(
+    content: SFNode,
+    front decoration: SFNode,
+    alignment: Alignment
+) -> SFNode {
+    var node = SFNode.makeDefault()
+    node.kind = SF_NODE_STACK
+    node.axis = SF_AXIS_DEPTH
+
+    node.alignment = alignment.horizontal.toSFAlignment()
+    node.verticalAlignment = alignment.vertical.toSFAlignment()
+
+    node.sizingX = content.sizingX
+    node.sizingY = content.sizingY
+
+    node.fixedWidth = content.fixedWidth
+    node.fixedHeight = content.fixedHeight
+
+    var children = [content, decoration]
+    let count = children.count
+    FrameArena.shared.storeNodes(&children) { pointer in
+        node.children = pointer
+        node.childrenLen = count
+    }
+    return node
+}
+
+public struct OverlayModifier<Content: View, Overlay: View>: View {
+    public typealias Body = Never
+    public var body: Never { fatalError() }
+    let content: Content
+    let overlay: Overlay
+    let alignment: Alignment
+}
+
+extension OverlayModifier {
+    public func toSFNode() -> SFNode {
+        let fg = content.toSFNode()
+        let over = overlay.toSFNode()
+        return layered(content: fg, front: over, alignment: alignment)
+    }
+}
+
+extension View {
+    /// Draws a view in front of this one, sized to match.
+    ///
+    /// The mirror of `.background(_:)`. The overlay measures against this
+    /// view rather than the other way round, so this view's size is what
+    /// decides the pair's — a shape with the default Fill sizing covers it
+    /// exactly, and anything that hugs sits inside it at `alignment`.
+    ///
+    /// - Note: like the rest of the framework, this does not clip. An overlay
+    ///   larger than the view it decorates still draws. See `.clipShape(_:)`.
+    public func overlay<V: View>(
+        _ overlay: V,
+        alignment: Alignment = .center
+    ) -> OverlayModifier<Self, V> {
+        OverlayModifier(content: self, overlay: overlay, alignment: alignment)
+    }
+}
+
+public struct StrokeModifier<Content: View>: View {
+    public typealias Body = Never
+    public var body: Never { fatalError() }
+    let content: Content
+    let color: Color
+    let lineWidth: Float
+}
+
+extension StrokeModifier {
+    public func toSFNode() -> SFNode {
+        var fg = content.toSFNode()
+        let border = SFBorder(
+            color: color.toSFColor(),
+            width: lineWidth * DeviceScale.current,
+            _pad: (0, 0, 0)
+        )
+
+        // A rect draws its own border in the same instance as its fill, so
+        // stroking one costs no node and keeps it eligible for the merge.
+        if fg.kind == SF_NODE_RECT {
+            fg.border = border
+            return fg
+        }
+
+        // Anything else gets the outline as a rect in front. A stack only
+        // draws its own frame when it has a fill, and text has no frame at
+        // all, so writing the border onto those would draw nothing.
+        var outline = SFNode.makeDefault()
+        outline.kind = SF_NODE_RECT
+        outline.fill = SFColor(r: 0, g: 0, b: 0, a: 0)
+        outline.border = border
+        outline.cornerRadius = fg.cornerRadius
+        outline.sizing = SF_SIZING_FILL
+
+        return layered(content: fg, front: outline, alignment: .center)
+    }
+}
+
+extension View {
+    /// Draws a line along the inside of this view's edge.
+    ///
+    /// The stroke follows the corner radius this view already carries, so
+    /// `.cornerRadius(_:)` and `.clipShape(_:)` round it too — order doesn't
+    /// matter, both write the same field. The line is drawn inside the
+    /// bounds, so it never grows the view or bleeds into a neighbour.
+    ///
+    /// To stroke a shape that isn't this view's own outline, overlay it:
+    /// `.overlay(Circle().stroke(.accent))`.
+    public func stroke(_ color: Color, lineWidth: Float = 1) -> StrokeModifier<Self> {
+        StrokeModifier(content: self, color: color, lineWidth: lineWidth)
+    }
+}
+
 public struct ScaleModifier<Content: View>: View {
     public typealias Body = Never
     public var body: Never { fatalError() }

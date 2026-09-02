@@ -140,7 +140,7 @@ extension StrokedShape {
         node.fill = SFColor(r: 0, g: 0, b: 0, a: 0)
         node.border = SFBorder(
             color: color.toSFColor(),
-            width: lineWidth,
+            width: lineWidth * DeviceScale.current,
             _pad: (0, 0, 0)
         )
         node.sizing = SF_SIZING_FILL
