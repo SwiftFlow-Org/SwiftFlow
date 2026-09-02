@@ -10,8 +10,10 @@ enum SliderMetrics {
     static let trackHeight: Float = 6
     static let heldTrackHeight: Float = 11
 
-    static let knobSize: Float = 22
-    static let heldKnobSize: Float = 26
+    static let knobWidth: Float = 38
+    static let knobHeight: Float = 24
+    static let heldKnobWidth: Float = 57
+    static let heldKnobHeight: Float = 38
 
     static let tickSize: Float = 3
 
@@ -94,17 +96,19 @@ extension Slider {
     }
 
     private func track(id: UInt32, held: Bool, width: Float) -> some View {
-        let knob = held ? SliderMetrics.heldKnobSize : SliderMetrics.knobSize
+        let knobWidth = held ? SliderMetrics.heldKnobWidth : SliderMetrics.knobWidth
+        let knobHeight = held ? SliderMetrics.heldKnobHeight : SliderMetrics.knobHeight
         let thickness = held ? SliderMetrics.heldTrackHeight : SliderMetrics.trackHeight
 
-        let travel = max(width - knob, 0)
+        let travel = max(width - knobWidth, 0)
         let knobX = fraction * travel
-        let fillWidth = knobX + knob / 2
+        let knobY: Float = held ? -6 : 0
+        let fillWidth = knobX + knobWidth / 2
 
         return ZStack(alignment: .leading) {
             Capsule()
                 .fill(.fill)
-                .frame(height: thickness)
+                .frame(height: SliderMetrics.trackHeight)
                 .animation(SliderMetrics.grow, id: SliderMetrics.trackID(id))
 
             // The height animates on the inner node and the width is set on
@@ -112,15 +116,16 @@ extension Slider {
             // its thickness still springs.
             Capsule()
                 .fill(.accent)
-                .frame(height: thickness)
+                .frame(height: SliderMetrics.trackHeight)
                 .animation(SliderMetrics.grow, id: SliderMetrics.fillID(id))
                 .frame(width: fillWidth)
 
-            ticks(travel: travel, knob: knob)
+            ticks(travel: travel, knob: knobWidth)
 
             Capsule()
                 .fill(.primary)
-                .frame(width: knob, height: knob)
+                .frame(width: knobWidth, height: knobHeight)
+                .offset(y: knobY)
                 .animation(SliderMetrics.grow, id: SliderMetrics.knobID(id))
                 .offset(x: knobX)
         }
@@ -180,7 +185,7 @@ extension Slider {
     /// centre rather than the row's edge, or the last few points of travel
     /// would be unreachable.
     private func value(atRowX x: Float, width: Float) -> Float {
-        let held = SliderMetrics.heldKnobSize
+        let held = SliderMetrics.heldKnobWidth
         let travel = max(width - held, 1)
         let fraction = min(max((x - held / 2) / travel, 0), 1)
         let raw = bounds.lowerBound + fraction * (bounds.upperBound - bounds.lowerBound)

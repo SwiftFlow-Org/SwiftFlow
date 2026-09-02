@@ -2,15 +2,16 @@ import CSwiftFlow
 
 enum ToggleMetrics {
 
-    static let trackWidth: Float = 51
-    static let trackHeight: Float = 31
-    static let knobSize: Float = 27
+    static let trackWidth: Float = 64
+    static let trackHeight: Float = 28
+    static let knobWidth: Float = 38
+    static let knobHeight: Float = 24
     static let inset: Float = 2
 
     /// What the knob widens to while it is held down. It grows on the side it
     /// is about to travel to, which is the whole tell that it is a switch and
     /// not a light.
-    static let heldKnobWidth: Float = 33
+    static let heldKnobWidth: Float = 38
 
     /// The knob's travel. Enough damping to land without a wobble, quick
     /// enough that the switch feels flicked rather than driven.
@@ -95,7 +96,7 @@ extension Toggle {
 
     private func sw(id: UInt32, held: Bool) -> some View {
         let on = isOn.wrappedValue
-        let knobWidth = held ? ToggleMetrics.heldKnobWidth : ToggleMetrics.knobSize
+        let knobWidth = held ? ToggleMetrics.heldKnobWidth : ToggleMetrics.knobWidth
         let travel = ToggleMetrics.trackWidth - ToggleMetrics.inset * 2 - knobWidth
 
         return ZStack(alignment: .leading) {
@@ -111,7 +112,7 @@ extension Toggle {
             // rather than as two separate moves.
             Capsule()
                 .fill(.primary)
-                .frame(width: knobWidth, height: ToggleMetrics.knobSize)
+                .frame(width: knobWidth, height: ToggleMetrics.knobHeight)
                 .offset(x: ToggleMetrics.inset + (on ? travel : 0))
                 .animation(ToggleMetrics.travel, id: ToggleMetrics.knobID(id))
         }
