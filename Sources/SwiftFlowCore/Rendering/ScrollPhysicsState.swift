@@ -18,6 +18,15 @@ public final class ScrollPhysicsState {
 
     private var rawOffset: Float = 0
 
+    /// Where the scroll rests before anything has moved it, as a fraction of
+    /// its travel. Set by `.defaultScrollAnchor(_:)`; nil leaves it at the top.
+    public var defaultAnchor: Float?
+
+    /// Whether the anchor has had its one chance. Settles either by being
+    /// applied or by the reader scrolling first — an anchor is where the view
+    /// *opens*, and must never yank the content back once it's been moved.
+    private var anchorSettled = false
+
     public init() {}
 
     public var maxOffset: Float {
@@ -33,12 +42,29 @@ public final class ScrollPhysicsState {
             viewportLength = metrics.viewportWidth
             contentLength = metrics.contentWidth
         }
+        applyDefaultAnchor()
+    }
+
+    /// Resolves the anchor against the travel, once there is any to resolve it
+    /// against. The first frame measures nothing, and content that doesn't fill
+    /// the viewport yet has nowhere to sit but the top, so this waits rather
+    /// than spending the anchor on a zero `maxOffset` — which is what makes
+    /// `.end` work for a list that fills up after its first frame.
+    private func applyDefaultAnchor() {
+        guard !anchorSettled, let anchor = defaultAnchor else { return }
+        guard maxOffset > 0 else { return }
+
+        anchorSettled = true
+        offset = min(max(anchor, 0), 1) * maxOffset
+        rawOffset = offset
+        NodeRegistry.shared.needsRender = true
     }
 
     public func beginDrag() {
         isDragging = true
         isSettling = false
         isBouncing = false
+        anchorSettled = true
         velocity = 0
         rawOffset = offset
     }
@@ -53,6 +79,7 @@ public final class ScrollPhysicsState {
         isDragging = false
         isSettling = false
         isBouncing = false
+        anchorSettled = true
         velocity = 0
         offset = min(max(offset + delta, 0), maxOffset)
 

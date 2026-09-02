@@ -199,6 +199,47 @@ it, identity comes from `#fileID`/`#line`/`#column`.
 `.frame(height:)` — because its content decides how far it runs sideways,
 not how tall it is.
 
+```swift
+.defaultScrollAnchor(_ anchor: ScrollAnchor)      // on ScrollView
+.scrollEdgeEffect(_ style: ScrollEdgeEffectStyle = .soft,
+                  for edge: ScrollEdge = .top,
+                  height: Float? = nil,
+                  material: Material = .hardMaterial)
+```
+
+`ScrollAnchor` is `.start`, `.center` or `.end` — named along the axis,
+since the same anchor has to mean something on a horizontal scroll. It
+opens the view somewhere other than the top:
+
+```swift
+ScrollView { Transcript() }.defaultScrollAnchor(.end)
+```
+
+The anchor lands on the first frame that has any travel to land on, so a
+list that only overflows once it has loaded still ends up where it was
+asked to. After that the reader owns the position — it never pulls
+content back once scrolled.
+
+**Differs:** SwiftUI takes a `UnitPoint` and anchors both axes. This
+takes a `ScrollAnchor` and anchors the one axis the scroll runs on.
+
+**Differs:** the anchor resolves against measured content, which is known
+a frame late, so a scroll opening at `.end` shows its top for one frame
+before it lands.
+
+`.scrollEdgeEffect()` is the blur the navigation and tab bars lay down,
+on its own, for a scroll that sits under neither. `.soft` ramps the blur
+out across the band so content dissolves on its way under; `.hard` blurs
+evenly and stops at a defined edge. `height` defaults to the bar on that
+edge — the collapsed navigation bar at the top, the tab bar and its home
+indicator at the bottom.
+
+```swift
+ScrollView { Feed() }
+    .scrollEdgeEffect()                            // soft, top
+    .scrollEdgeEffect(.hard, for: .bottom, material: .thickMaterial)
+```
+
 ### Lists
 
 Windowed: only the visible rows are built, however long the data is.
