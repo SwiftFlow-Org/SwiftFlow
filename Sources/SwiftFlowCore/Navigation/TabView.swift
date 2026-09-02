@@ -622,6 +622,16 @@ final class TabBuildContext {
         building = nil
     }
 
+    /// Runs `body` with the tab context suspended. A sheet is presented over
+    /// the tab bar rather than beside it, so a navigation stack inside one
+    /// must not inset its content for a bar that isn't under it.
+    func outsideTab<T>(_ body: () -> T) -> T {
+        let saved = building
+        building = nil
+        defer { building = saved }
+        return body()
+    }
+
     func register(_ scrollID: UInt32, axis: Axis) {
         guard let building, axis == .vertical, scrolls[building] == nil else { return }
         scrolls[building] = scrollID

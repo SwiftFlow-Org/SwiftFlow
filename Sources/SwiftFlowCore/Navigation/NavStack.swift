@@ -105,7 +105,9 @@ extension NavStack {
         guard !stack.modals.isEmpty else { return gestured.toSFNode() }
 
         if TabBuildContext.shared.isBuildingTab {
-            PresentationStore.shared.hand(over: ModalHost.layerNodes(for: stack))
+            PresentationStore.shared.hand(
+                over: TabBuildContext.shared.outsideTab { ModalHost.layerNodes(for: stack) }
+            )
             return gestured.toSFNode()
         }
         return ModalHost(base: gestured, stack: stack).toSFNode()
@@ -194,9 +196,23 @@ struct NavigationLayer<Content: View>: View {
         let scale = DeviceScale.current
 
         let inset = NavigationBarMetrics.contentInset(mode: mode, hasTitle: config.title != nil)
+
+        // Both bars float over the content, so neither has taken its height out
+        // of the space the content lays out in. The top has always been inset
+        // here; the bottom used to run to the edge of the screen, which left
+        // anything centred sitting half the tab bar's height too low. It goes
+        // on the content and not on the screen around it — the screen's
+        // background has to keep reaching the bottom or the bar has nothing to
+        // blur. Content still travels under both: a scroll clips to its whole
+        // frame and only lays out inside the inset.
+        let bottomInset = TabBuildContext.shared.isBuildingTab
+            ? TabBarMetrics.contentInset
+            : 0
+
         applyContentInset(
             &node,
             top: inset * scale,
+            bottom: bottomInset * scale,
             edge: background.map {
                 EdgeEffect(material: $0, height: barHeight(config, mode) * scale)
             }
