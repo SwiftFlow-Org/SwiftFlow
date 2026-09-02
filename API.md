@@ -205,6 +205,9 @@ not how tall it is.
                   for edge: ScrollEdge = .top,
                   height: Float? = nil,
                   material: Material = .hardMaterial)
+.scrollEdgeEffect(for edge: ScrollEdge = .top,
+                  height: Float? = nil,
+                  band: () -> some View)
 ```
 
 `ScrollAnchor` is `.start`, `.center` or `.end` — named along the axis,
@@ -239,6 +242,23 @@ ScrollView { Feed() }
     .scrollEdgeEffect()                            // soft, top
     .scrollEdgeEffect(.hard, for: .bottom, material: .thickMaterial)
 ```
+
+Neither style is a special case in the renderer — a band is an ordinary
+view pinned to an edge, and the `band:` form hands you that seam. Anything
+the two styles can't say is composition rather than a new case:
+
+```swift
+ScrollView { Feed() }
+    .scrollEdgeEffect(for: .bottom, height: 120) {
+        Material.thickMaterial
+            .overlay(RoundedRectangle(cornerRadius: 0).fill(.surface.opacity(0.3)))
+            .overlay(RoundedRectangle(cornerRadius: 0).fill(.border).frame(height: 1),
+                     alignment: .top)          // hairline along the inner edge
+    }
+```
+
+The band is laid over the content at full width and the given height,
+pinned to `edge`. Everything else is yours.
 
 ### Lists
 

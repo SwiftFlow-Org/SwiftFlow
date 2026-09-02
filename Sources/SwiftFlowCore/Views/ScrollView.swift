@@ -162,7 +162,23 @@ public enum ScrollEdge: Sendable {
     case bottom
 }
 
+extension ScrollEdge {
+
+    /// The bar that edge normally carries, which is what an unstated band
+    /// height falls back to.
+    var defaultEffectHeight: Float {
+        switch self {
+        case .top: return NavigationBarMetrics.collapsedHeight
+        case .bottom: return TabBarMetrics.contentInset
+        }
+    }
+}
+
 /// How content behaves as it reaches the edge of a scroll view.
+///
+/// Two stock bands. Neither is a special case in the renderer — both are
+/// ordinary views pinned to an edge — so anything they can't express is
+/// reachable through the `band:` form of `.scrollEdgeEffect(for:height:)`.
 public enum ScrollEdgeEffectStyle: Sendable {
 
     /// The blur ramps out across the band, so content dissolves on its way
@@ -172,28 +188,17 @@ public enum ScrollEdgeEffectStyle: Sendable {
     /// The band blurs evenly and stops where it stops — a defined edge, for
     /// chrome that is meant to read as a surface of its own.
     case hard
-}
 
-/// The band a `.scrollEdgeEffect(_:for:)` draws.
-public struct ScrollEdgeEffectBand: View {
-    let style: ScrollEdgeEffectStyle
-    let edge: ScrollEdge
-    let height: Float
-    let material: Material
-
-    public var body: some View {
-        band.frame(height: height, maxWidth: .infinity)
-    }
-
-    private var band: Material {
-        switch style {
+    /// The material this style makes of `base` at `edge`.
+    func material(_ base: Material, at edge: ScrollEdge) -> Material {
+        switch self {
         case .hard:
-            return material
+            return base
         case .soft:
             // Strongest against the edge it sits on, gone by the far side of
             // the band — which is the opposite edge from the one it's pinned
             // to. `start: 0` ramps across the whole band, like the bars do.
-            return material.progressive(toward: edge == .top ? .bottom : .top, start: 0)
+            return base.progressive(toward: edge == .top ? .bottom : .top, start: 0)
         }
     }
 }
@@ -213,18 +218,37 @@ extension View {
         for edge: ScrollEdge = .top,
         height: Float? = nil,
         material: Material = .hardMaterial
-    ) -> OverlayModifier<Self, ScrollEdgeEffectBand> {
-        let resolved = height ?? (edge == .top
-            ? NavigationBarMetrics.collapsedHeight
-            : TabBarMetrics.contentInset)
+    ) -> OverlayModifier<Self, FrameModifier<Material>> {
+        scrollEdgeEffect(for: edge, height: height) {
+            style.material(material, at: edge)
+        }
+    }
 
-        return overlay(
-            ScrollEdgeEffectBand(
-                style: style,
-                edge: edge,
-                height: resolved,
-                material: material
-            ),
+    /// The same band, built out of whatever you like.
+    ///
+    /// The stock styles are only a material pinned to an edge, and this is the
+    /// seam they are built on — so a band that layers a material under a
+    /// gradient, or draws a hairline along its inner edge, is composition
+    /// rather than a new case here:
+    ///
+    /// ```swift
+    /// ScrollView { Feed() }
+    ///     .scrollEdgeEffect(for: .bottom, height: 120) {
+    ///         Material.thickMaterial
+    ///             .overlay(RoundedRectangle(cornerRadius: 0).fill(.surface.opacity(0.3)))
+    ///             .overlay(hairline, alignment: .top)
+    ///     }
+    /// ```
+    ///
+    /// The band is laid over the content at full width and the given height,
+    /// pinned to `edge`. Everything else is yours.
+    public func scrollEdgeEffect<Band: View>(
+        for edge: ScrollEdge = .top,
+        height: Float? = nil,
+        @ViewBuilder band: () -> Band
+    ) -> OverlayModifier<Self, FrameModifier<Band>> {
+        overlay(
+            band().frame(height: height ?? edge.defaultEffectHeight, maxWidth: .infinity),
             alignment: edge == .top ? .top : .bottom
         )
     }
