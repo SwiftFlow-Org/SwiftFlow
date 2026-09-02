@@ -38,11 +38,22 @@ enum Cmd {
     Build {
         #[arg(long, short)]
         platform: Option<Platform>,
+
+        /// Build the Swift app with optimisations.
+        #[arg(long)]
+        release: bool,
     },
 
     Run {
         #[arg(long, short)]
         platform: Option<Platform>,
+
+        /// Build the Swift app with optimisations. Worth reaching for before
+        /// judging how the app performs: the renderer is always compiled
+        /// release, but the Swift side runs debug by default, and that gap is
+        /// wide enough to read as lag that isn't there.
+        #[arg(long)]
+        release: bool,
     },
 
     Preview {
@@ -67,8 +78,8 @@ fn main() -> ExitCode {
     let env = RealEnv;
     let result = match cli.command {
         Cmd::New { name, pin, force } => cmd_new(&env, &name, pin.as_deref(), force),
-        Cmd::Build { platform } => cmd_build(&env, platform, false),
-        Cmd::Run { platform } => cmd_build(&env, platform, true),
+        Cmd::Build { platform, release } => cmd_build(&env, platform, false, release),
+        Cmd::Run { platform, release } => cmd_build(&env, platform, true, release),
         Cmd::Preview { platform, offscreen, width, height, scale } =>
             cmd_preview(&env, platform, offscreen, width, height, scale),
         Cmd::Doctor => cmd_doctor(&env),
@@ -172,7 +183,12 @@ fn resolve(env: &dyn Env, platform: Option<Platform>) -> Result<Resolved, String
     })
 }
 
-fn cmd_build(env: &dyn Env, platform: Option<Platform>, run: bool) -> Result<(), String> {
+fn cmd_build(
+    env: &dyn Env,
+    platform: Option<Platform>,
+    run: bool,
+    release: bool,
+) -> Result<(), String> {
     let r = resolve(env, platform)?;
 
     println!(
@@ -189,6 +205,7 @@ fn cmd_build(env: &dyn Env, platform: Option<Platform>, run: bool) -> Result<(),
         home: r.home,
         platform: r.platform,
         run,
+        release,
     }
     .go()
 }
@@ -217,6 +234,7 @@ fn cmd_preview(
         home: r.home,
         platform: r.platform,
         run: false,
+        release: false,
     }
     .preview(offscreen)
 }

@@ -19,6 +19,11 @@ pub struct Build {
     pub platform: Platform,
 
     pub run: bool,
+
+    /// Build the Swift app with optimisations. Only the paths that default to
+    /// debug read this — `swiftflow build --platform ios` and Android are
+    /// release already, and the Rust renderer always is, whatever this says.
+    pub release: bool,
 }
 
 impl Build {
@@ -259,10 +264,14 @@ impl Build {
         println!("▶ Building and running the app...");
 
         let verb = if self.run { "run" } else { "build" };
-        self.swift_env(Run::new("swift"), &triple, &lib_dir)
-            .arg(verb)
-            .current_dir(&self.project.root)
-            .run()
+        let mut swift = self
+            .swift_env(Run::new("swift"), &triple, &lib_dir)
+            .arg(verb);
+        // Same reason as iOS: `swift run` is debug unless told otherwise.
+        if self.release {
+            swift = swift.args(["-c", "release"]);
+        }
+        swift.current_dir(&self.project.root).run()
     }
 
     /// `swiftflow preview` — build the preview host + a views dylib, open a
@@ -410,9 +419,13 @@ impl Build {
                 .run();
         }
 
-        println!("▶ Building and running with xtool...");
+        // xtool defaults to debug, and an unoptimised Swift build is slow
+        // enough on device to be mistaken for the framework being slow. Always
+        // say which one we mean rather than leaning on its default.
+        let config = if self.release { "release" } else { "debug" };
+        println!("▶ Building and running with xtool ({config})...");
         self.swift_env(Run::new("xtool"), TRIPLE, &lib_dir)
-            .arg("dev")
+            .args(["dev", "-c", config])
             .current_dir(&self.project.root)
             .run()?;
 
