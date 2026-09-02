@@ -1350,8 +1350,8 @@ void sf_android_run(void* app);
         assert!(!found.contains(&"sf_android_run".to_string()));
         assert_eq!(
             found.len(),
-            17,
-            "12 core plus the desktop host's five (run, two IME, two file-dialog) — {found:?}"
+            19,
+            "14 core plus the desktop host's five (run, two IME, two file-dialog) — {found:?}"
         );
     }
 
