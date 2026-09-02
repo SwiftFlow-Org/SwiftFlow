@@ -203,8 +203,7 @@ not how tall it is.
 .defaultScrollAnchor(_ anchor: ScrollAnchor)      // on ScrollView
 .scrollEdgeEffect(_ style: ScrollEdgeEffectStyle = .soft,
                   for edge: ScrollEdge = .top,
-                  height: Float? = nil,
-                  material: Material = .hardMaterial)
+                  height: Float? = nil)
 .scrollEdgeEffect(for edge: ScrollEdge = .top,
                   height: Float? = nil,
                   band: () -> some View)
@@ -232,16 +231,31 @@ before it lands.
 
 `.scrollEdgeEffect()` is the blur the navigation and tab bars lay down,
 on its own, for a scroll that sits under neither. `.soft` ramps the blur
-out across the band so content dissolves on its way under; `.hard` blurs
-evenly and stops at a defined edge. `height` defaults to the bar on that
-edge — the collapsed navigation bar at the top, the tab bar and its home
-indicator at the bottom.
+out across the band so content dissolves on its way under. `.hard` is a
+plate — flat fill, hairline around it — with a late-starting blur behind,
+for chrome meant to read as a surface of its own. `height` defaults to
+the bar on that edge: the collapsed navigation bar at the top, the tab
+bar and its home indicator at the bottom.
 
 ```swift
 ScrollView { Feed() }
     .scrollEdgeEffect()                            // soft, top
-    .scrollEdgeEffect(.hard, for: .bottom, material: .thickMaterial)
+    .scrollEdgeEffect(.hard, for: .bottom)
 ```
+
+**Retuning the built-ins** is `ScrollEdgeEffectMetrics`, which is the
+only thing either style reads:
+
+```swift
+ScrollEdgeEffectMetrics.hardBlurStart    = 0.75   // where the blur ramps
+ScrollEdgeEffectMetrics.hardFillOpacity  = 0.55   // the plate
+ScrollEdgeEffectMetrics.hardStrokeOpacity = 0.1   // the line around it
+ScrollEdgeEffectMetrics.hardStrokeWidth  = 0.67
+ScrollEdgeEffectMetrics.softStart        = 0      // 0 ramps across the band
+```
+
+Set them once at launch and every band in the app follows. Reach for the
+`band:` form below only for a shape these numbers can't describe.
 
 Neither style is a special case in the renderer — a band is an ordinary
 view pinned to an edge, and the `band:` form hands you that seam. Anything

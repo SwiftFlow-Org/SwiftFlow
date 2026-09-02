@@ -174,32 +174,106 @@ extension ScrollEdge {
     }
 }
 
+/// What the two stock bands are cut from.
+///
+/// Every number the built-in styles look like is here, and nothing else reads
+/// them — so retuning `.soft` or `.hard` app-wide is editing this enum, not
+/// hunting through the builders. Reach for the `band:` closure only for a
+/// shape these can't describe at all.
+public enum ScrollEdgeEffectMetrics {
+
+    // The soft band: what the navigation and tab bars lay down.
+
+    nonisolated(unsafe) public static var softTint: Color = .background
+    nonisolated(unsafe) public static var softBlurRadius: Float = 50
+
+    /// Where the ramp begins, measured from the quiet end. 0 ramps across the
+    /// whole band, which is what the bars do.
+    nonisolated(unsafe) public static var softStart: Float = 0
+
+    // The hard band: a plate with the blur tucked under its outer edge.
+
+    nonisolated(unsafe) public static var hardTint: Color = .background
+    nonisolated(unsafe) public static var hardBlurRadius: Float = 50
+
+    /// Late on purpose. The blur is meant to disappear under the plate rather
+    /// than read as a gradient of its own, so it only starts ramping near the
+    /// inner edge where the plate stops covering it.
+    nonisolated(unsafe) public static var hardBlurStart: Float = 0.75
+
+    /// The plate laid over that blur.
+    nonisolated(unsafe) public static var hardFillOpacity: Float = 0.55
+
+    /// The line around the plate.
+    nonisolated(unsafe) public static var hardStrokeOpacity: Float = 0.1
+    nonisolated(unsafe) public static var hardStrokeWidth: Float = 0.67
+}
+
 /// How content behaves as it reaches the edge of a scroll view.
 ///
 /// Two stock bands. Neither is a special case in the renderer — both are
 /// ordinary views pinned to an edge — so anything they can't express is
-/// reachable through the `band:` form of `.scrollEdgeEffect(for:height:)`.
+/// reachable through the `band:` form of `.scrollEdgeEffect(for:height:)`,
+/// and anything that is only a different number is in
+/// `ScrollEdgeEffectMetrics`.
 public enum ScrollEdgeEffectStyle: Sendable {
 
     /// The blur ramps out across the band, so content dissolves on its way
     /// under the bar rather than meeting a line partway.
     case soft
 
-    /// The band blurs evenly and stops where it stops — a defined edge, for
-    /// chrome that is meant to read as a surface of its own.
+    /// A plate — flat fill, hairline around it — with a late-starting blur
+    /// behind. For chrome meant to read as a surface of its own.
     case hard
+}
 
-    /// The material this style makes of `base` at `edge`.
-    func material(_ base: Material, at edge: ScrollEdge) -> Material {
-        switch self {
-        case .hard:
-            return base
+/// The band a stock `.scrollEdgeEffect(_:for:)` draws.
+public struct ScrollEdgeEffectBand: View {
+    let style: ScrollEdgeEffectStyle
+    let edge: ScrollEdge
+
+    public init(style: ScrollEdgeEffectStyle, edge: ScrollEdge) {
+        self.style = style
+        self.edge = edge
+    }
+
+    /// Strongest against the edge it sits on, gone by the far side of the
+    /// band — so the ramp runs toward the opposite edge from the one the band
+    /// is pinned to.
+    private var toward: ProgressiveEdge { edge == .top ? .bottom : .top }
+
+    public var body: some View {
+        switch style {
         case .soft:
-            // Strongest against the edge it sits on, gone by the far side of
-            // the band — which is the opposite edge from the one it's pinned
-            // to. `start: 0` ramps across the whole band, like the bars do.
-            return base.progressive(toward: edge == .top ? .bottom : .top, start: 0)
+            Material(
+                blurRadius: ScrollEdgeEffectMetrics.softBlurRadius,
+                tint: ScrollEdgeEffectMetrics.softTint
+            )
+            .progressive(toward: toward, start: ScrollEdgeEffectMetrics.softStart)
+
+        case .hard:
+            // Untinted, because the plate in front carries the colour. Tinting
+            // both would lay the fill down twice.
+            Material(
+                blurRadius: ScrollEdgeEffectMetrics.hardBlurRadius,
+                tint: .clear
+            )
+            .progressive(toward: toward, start: ScrollEdgeEffectMetrics.hardBlurStart)
+            .overlay(plate)
         }
+    }
+
+    /// A square-cornered plate: the fill, and the line around it in one node —
+    /// `.stroke()` on a rect writes its border rather than adding a layer.
+    private var plate: some View {
+        RoundedRectangle(cornerRadius: 0)
+            .fill(ScrollEdgeEffectMetrics.hardTint
+                .opacity(ScrollEdgeEffectMetrics.hardFillOpacity))
+            .stroke(
+                ScrollEdgeEffectMetrics.hardTint
+                    .opacity(ScrollEdgeEffectMetrics.hardStrokeOpacity),
+                lineWidth: ScrollEdgeEffectMetrics.hardStrokeWidth
+            )
     }
 }
 
@@ -213,14 +287,15 @@ extension View {
     ///
     /// `height` defaults to the bar on that edge: the collapsed navigation bar
     /// at the top, the tab bar and its home indicator at the bottom.
+    /// What either style looks like is `ScrollEdgeEffectMetrics` — change it
+    /// there and every band in the app follows.
     public func scrollEdgeEffect(
         _ style: ScrollEdgeEffectStyle = .soft,
         for edge: ScrollEdge = .top,
-        height: Float? = nil,
-        material: Material = .hardMaterial
-    ) -> OverlayModifier<Self, FrameModifier<Material>> {
+        height: Float? = nil
+    ) -> OverlayModifier<Self, FrameModifier<ScrollEdgeEffectBand>> {
         scrollEdgeEffect(for: edge, height: height) {
-            style.material(material, at: edge)
+            ScrollEdgeEffectBand(style: style, edge: edge)
         }
     }
 
