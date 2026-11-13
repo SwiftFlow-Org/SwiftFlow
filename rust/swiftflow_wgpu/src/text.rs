@@ -301,12 +301,19 @@ impl TextRenderer {
             let baseline_y = baseline_y.round();
             let mut cursor_x = frame.x;
 
-            for c in content.chars() {
+            let chars: Vec<char> = content.chars().collect();
+            for (i, &c) in chars.iter().enumerate() {
                 if c == ' ' {
                     cursor_x += with_font_system(|fs| fs.space_width(raster_size, weight, family))
                         * render_scale;
                     continue;
                 }
+                // Kerned as `measure` kerns, so text is drawn as wide as it
+                // was laid out.
+                let kern = match chars.get(i + 1) {
+                    Some(&next) => with_font_system(|fs| fs.kerning(c, next, raster_size, weight, family)),
+                    None => 0.0,
+                };
 
                 let glyph = with_font_system(|fs| fs.glyph(c, raster_size, weight, family));
                 let Some(glyph) = glyph else { continue };
@@ -336,7 +343,7 @@ impl TextRenderer {
                     blur: [blur, render_w, render_h, 0.0],
                 });
 
-                cursor_x += advance;
+                cursor_x += advance + kern * render_scale;
             }
         }
 
