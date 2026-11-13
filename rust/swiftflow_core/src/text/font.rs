@@ -324,11 +324,11 @@ impl FontSystem {
                 uv_height: glyph_h as f32 / ATLAS_SIZE as f32,
                 width: glyph_w as f32,
                 height: glyph_h as f32,
-                offset_x: glyph_data.bbox_min[0] * scale_factor,
+                offset_x: crate::rasterizer::glyph_grid(&glyph_data, font_size).0 as f32,
                 offset_y: glyph_data.bbox_min[1] * scale_factor,
                 advance: glyph_data.advance * scale_factor,
                 ascender: glyph_data.bbox_max[1] * scale_factor,
-                top: glyph_data.bbox_max[1] * scale_factor,
+                top: crate::rasterizer::glyph_grid(&glyph_data, font_size).1 as f32,
             },
         );
         self.write_accum_to_atlas(key, glyph_w, glyph_h);

@@ -119,6 +119,20 @@ fn quasirandom(n: u32) -> (f32, f32) {
     (x, y)
 }
 
+/// The whole-pixel grid a glyph is drawn on at `font_size`: the left and
+/// top pixel edges, from the pen position and the baseline (y up), and
+/// how many pixels across and down. The outline keeps its exact place on
+/// this grid, so a glyph drawn at a whole-pixel pen position lands where
+/// the font puts it.
+pub fn glyph_grid(glyph: &GlyphData, font_size: f32) -> (i32, i32, u32, u32) {
+    let scale = font_size / glyph.units_per_em;
+    let left = (glyph.bbox_min[0] * scale).floor() as i32;
+    let right = (glyph.bbox_max[0] * scale).ceil() as i32;
+    let top = (glyph.bbox_max[1] * scale).ceil() as i32;
+    let bottom = (glyph.bbox_min[1] * scale).floor() as i32;
+    (left, top, (right - left).max(1) as u32, (top - bottom).max(1) as u32)
+}
+
 pub fn rasterize_glyph(
     glyph: &GlyphData,
     font_size: f32,
@@ -127,16 +141,16 @@ pub fn rasterize_glyph(
 ) -> (Vec<u8>, u32, u32) {
     let scale = font_size / glyph.units_per_em;
 
-    let width = (glyph.width_px(font_size).ceil() as u32).max(1);
-    let height = (glyph.height_px(font_size).ceil() as u32).max(1);
+    let (left, top, width, height) = glyph_grid(glyph, font_size);
 
     let mut bitmap = vec![0u8; (width * height) as usize];
 
     for py in 0..height {
         for px in 0..width {
 
-            let em_x = glyph.bbox_min[0] + px as f32 / scale;
-            let em_y = glyph.bbox_max[1] - py as f32 / scale;
+            // Samples spread about each pixel's centre.
+            let em_x = (left as f32 + px as f32 + 0.5) / scale;
+            let em_y = (top as f32 - py as f32 - 0.5) / scale;
 
             let pixel_size_em = 1.0 / scale;
 

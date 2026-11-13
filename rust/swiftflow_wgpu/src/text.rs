@@ -296,6 +296,9 @@ impl TextRenderer {
                 let font_ascender = with_font_system(|fs| fs.ascender(raster_size, family));
                 frame.y + font_ascender * render_scale
             };
+            // Baselines on whole pixels, so every line of a size sits on
+            // the same grid whatever letters it holds.
+            let baseline_y = baseline_y.round();
             let mut cursor_x = frame.x;
 
             for c in content.chars() {
@@ -314,8 +317,13 @@ impl TextRenderer {
                 let offset_y = glyph.offset_y * render_scale;
                 let advance = glyph.advance * render_scale;
 
-                let x = cursor_x + offset_x;
-                let y = baseline_y - glyph.top * render_scale;
+                // On whole pixels: the atlas holds each glyph rasterised on
+                // the pixel grid, and a fractional position would have the
+                // linear sampler smear it over two pixels, softening small
+                // text. The pen itself keeps its fractions, so spacing stays
+                // even.
+                let x = (cursor_x + offset_x).round();
+                let y = (baseline_y - glyph.top * render_scale).round();
 
                 let uv = [glyph.uv_x, glyph.uv_y, glyph.uv_width, glyph.uv_height];
 

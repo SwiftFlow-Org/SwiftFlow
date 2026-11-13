@@ -117,6 +117,13 @@ typedef struct SFNode {
     
     float         glassClarity;
 
+    // A material's tail: a rounded point out of its top edge, joined
+    // smoothly to it. tailOffset is where along the edge it sits, from the
+    // edge's middle, and tailLength how far it reaches, both in pixels;
+    // a length of 0 is no tail.
+    float         tailOffset;
+    float         tailLength;
+
     const uint8_t* text;
     size_t         textLen;
     float          fontSize;

@@ -130,6 +130,11 @@ pub struct SFNode {
 
     pub glass_clarity: f32,
 
+    /// A material's tail out of its top edge: where along the edge, from
+    /// its middle, and how long, in pixels. A length of 0 is no tail.
+    pub tail_offset: f32,
+    pub tail_length: f32,
+
     pub text: *const u8,
     pub text_len: usize,
     pub font_size: f32,
@@ -211,6 +216,8 @@ impl SFNode {
             glass_refraction: 0.0,
             glass_interactive: 0.0,
             glass_clarity: 0.0,
+            tail_offset: 0.0,
+            tail_length: 0.0,
             text: std::ptr::null(),
             text_len: 0,
             font_size: 16.0,

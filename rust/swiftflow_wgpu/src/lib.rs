@@ -154,6 +154,7 @@ impl MaterialGpuParams {
         glass_refraction: f32,
         glass_interactive: f32,
         glass_clarity: f32,
+        tail: [f32; 2],
         clip: SFClip,
     ) -> Self {
         Self {
@@ -179,7 +180,7 @@ impl MaterialGpuParams {
                 glass_refraction,
                 glass_interactive,
             ],
-            params3: [glass_clarity, 0.0, 0.0, 0.0],
+            params3: [glass_clarity, tail[0], tail[1], 0.0],
         }
     }
 }
@@ -271,6 +272,16 @@ enum Batch {
 
     /// An app-drawn canvas: physical-pixel rect and clip.
     Canvas { id: u32, rect: [f32; 4], clip: [f32; 4] },
+}
+
+static LINEAR_LIGHT_TEXT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Draws text as if blended in linear light, the way a renderer with an
+/// sRGB framebuffer shows it: light text on dark reads a little heavier,
+/// dark text on light a little lighter. Off by default. An app whose
+/// look was set on such a renderer turns it on to match.
+pub fn set_linear_light_text(on: bool) {
+    LINEAR_LIGHT_TEXT.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[repr(C)]
@@ -1077,9 +1088,10 @@ impl WgpuBackend {
     }
 
     fn update_globals(&self, width: u32, height: u32) {
+        let linear_text = LINEAR_LIGHT_TEXT.load(std::sync::atomic::Ordering::Relaxed);
         let globals = Globals {
             resolution: [width as f32, height as f32],
-            _pad: [0.0; 2],
+            _pad: [if linear_text { 1.0 } else { 0.0 }, 0.0],
         };
         self.queue
             .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
@@ -1413,6 +1425,7 @@ impl SFBackend for WgpuBackend {
                     glass_refraction,
                     glass_interactive,
                     glass_clarity,
+                    tail,
                 } => {
                     if self.materials.len() >= self.max_materials {
                         continue;
@@ -1429,6 +1442,7 @@ impl SFBackend for WgpuBackend {
                         *glass_refraction,
                         *glass_interactive,
                         *glass_clarity,
+                        *tail,
                         clip,
                     ));
 

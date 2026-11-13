@@ -101,13 +101,41 @@ fn glyph_alpha(g: vec2<f32>, atlas_rect: vec4<f32>) -> f32 {
     return textureSampleLevel(atlas_texture, atlas_sampler, uv, 0.0).a * inside;
 }
 
+fn srgb_decode(c: f32) -> f32 {
+    return select(pow((c + 0.055) / 1.055, 2.4), c / 12.92, c <= 0.04045);
+}
+
+fn srgb_encode(c: f32) -> f32 {
+    let x = max(c, 0.0);
+    return select(1.055 * pow(x, 1.0 / 2.4) - 0.055, x * 12.92, x <= 0.0031308);
+}
+
+// Glyph coverage for text that should look blended in linear light, as on
+// a framebuffer with an sRGB format, while this one blends the encoded
+// values. The page behind isn't known here, so it is taken to be dark under
+// light text and light under dark text; the coverage is then chosen so the
+// encoded blend lands where the linear one would.
+fn linear_light_coverage(c: f32, fg: vec3<f32>) -> f32 {
+    let lum = dot(fg, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let bg = select(0.94, 0.11, lum >= 0.5);
+    let denom = lum - bg;
+    if (abs(denom) < 0.02) {
+        return c;
+    }
+    let wanted = srgb_encode(c * srgb_decode(lum) + (1.0 - c) * srgb_decode(bg));
+    return clamp((wanted - bg) / denom, 0.0, 1.0);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let clip = clip_coverage(in.screen, in.clip_rect, in.clip_radii);
     let radius = in.blur.x;
 
     if (radius <= 0.0) {
-        let a = glyph_alpha(in.glyph_uv, in.atlas_rect);
+        var a = glyph_alpha(in.glyph_uv, in.atlas_rect);
+        if (globals._pad.x > 0.5) {
+            a = linear_light_coverage(a, in.color.rgb);
+        }
         return vec4<f32>(in.color.rgb, in.color.a * a * clip);
     }
 

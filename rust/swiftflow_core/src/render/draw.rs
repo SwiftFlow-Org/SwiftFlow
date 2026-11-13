@@ -139,6 +139,9 @@ pub enum DrawCommand {
         glass_interactive: f32,
 
         glass_clarity: f32,
+
+        /// Tail offset and length, in pixels; see `SFNode::tail_length`.
+        tail: [f32; 2],
     },
 
     Image {
@@ -283,6 +286,7 @@ impl DrawList {
         glass_refraction: f32,
         glass_interactive: f32,
         glass_clarity: f32,
+        tail: [f32; 2],
     ) {
         self.push(DrawCommand::Material {
             frame,
@@ -296,6 +300,7 @@ impl DrawList {
             glass_refraction,
             glass_interactive,
             glass_clarity,
+            tail,
         });
     }
 

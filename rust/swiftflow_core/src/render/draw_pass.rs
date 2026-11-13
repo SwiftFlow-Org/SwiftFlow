@@ -24,6 +24,7 @@ fn draw_edge_effect(node: &SFNode, list: &mut DrawList, origin: SFPoint, w: f32,
         node.glass_refraction,
         node.glass_interactive,
         node.glass_clarity,
+        [0.0, 0.0],
     );
 }
 
@@ -108,6 +109,7 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
                     node.glass_refraction,
                     node.glass_interactive,
                     node.glass_clarity,
+                    [node.tail_offset, node.tail_length],
                 );
             } else {
                 list.rect(

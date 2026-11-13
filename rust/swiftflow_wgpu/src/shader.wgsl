@@ -83,6 +83,19 @@ fn vs_main(
 
 const CORNER_SUPERELLIPSE_N: f32 = 2.0;
 
+// Lays a border of `border` colour, `mask` coverage, over `color` (straight
+// alpha). A translucent border tints what is under it rather than replacing
+// it: mixing the two straight would also mix the alphas, so a faint line on
+// an opaque pane cut a see-through ring into it.
+fn border_over(color: vec4<f32>, border: vec4<f32>, mask: f32) -> vec4<f32> {
+    let ba = border.a * mask;
+    let a = ba + color.a * (1.0 - ba);
+    if (a <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+    return vec4<f32>((border.rgb * ba + color.rgb * color.a * (1.0 - ba)) / a, a);
+}
+
 fn sd_rounded_rect(p: vec2<f32>, size: vec2<f32>, r: f32, n: f32) -> f32 {
     let q  = abs(p) - size + r;
     let qc = max(q, vec2<f32>(0.0));
@@ -292,7 +305,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var color = vec4<f32>(0.0);
     color = mix(color, in.fill,         fill);
-    color = mix(color, in.border_color, border);
+    color = border_over(color, in.border_color, border);
 
     let specular = in.params.z;
     let normal   = sd_rounded_rect_normal(p, half, corner_radius, corner_n);
@@ -465,7 +478,7 @@ fn fs_merged(in: MergedVertexOutput) -> @location(0) vec4<f32> {
 
     var color = vec4<f32>(0.0);
     color = mix(color, folded.fill,         fill_mask);
-    color = mix(color, folded.border_color, border_mask);
+    color = border_over(color, folded.border_color, border_mask);
 
     let normal     = sd_merged_normal(p_screen, inst_idx, count, blend_k, color_blend_k);
     let rim_axis   = normalize(vec2<f32>(-1.0, -1.0));
@@ -506,18 +519,40 @@ const DOWNSAMPLE_RATIO: f32 = 8.0;
 
 const BLUR_ITERATIONS: f32 = 4.0;
 
+// The blur passes average in linear light: each tap is decoded from the
+// sRGB values the targets hold, summed, and encoded again. Averaging the
+// encoded values instead darkens every mix of light and dark, so a pane
+// over a white page beside a dark one came out darker at the seam than
+// light would.
+fn blur_decode(c: vec4<f32>) -> vec4<f32> {
+    let lo = c.rgb / 12.92;
+    let hi = pow((c.rgb + 0.055) / 1.055, vec3<f32>(2.4));
+    return vec4<f32>(select(hi, lo, c.rgb <= vec3<f32>(0.04045)), c.a);
+}
+
+fn blur_encode(c: vec4<f32>) -> vec4<f32> {
+    let rgb = max(c.rgb, vec3<f32>(0.0));
+    let lo = rgb * 12.92;
+    let hi = 1.055 * pow(rgb, vec3<f32>(1.0 / 2.4)) - 0.055;
+    return vec4<f32>(select(hi, lo, rgb <= vec3<f32>(0.0031308)), c.a);
+}
+
+fn blur_tap(uv: vec2<f32>) -> vec4<f32> {
+    return blur_decode(textureSample(src_tex, src_sampler, uv));
+}
+
 @fragment
 fn fs_halve(in: FullscreenOut) -> @location(0) vec4<f32> {
     let texel = 1.0 / vec2<f32>(textureDimensions(src_tex));
 
-    var c = textureSample(src_tex, src_sampler, in.uv) * 4.0;
+    var c = blur_tap(in.uv) * 4.0;
 
-    c += textureSample(src_tex, src_sampler, in.uv + vec2<f32>(-texel.x, -texel.y));
-    c += textureSample(src_tex, src_sampler, in.uv + vec2<f32>( texel.x, -texel.y));
-    c += textureSample(src_tex, src_sampler, in.uv + vec2<f32>(-texel.x,  texel.y));
-    c += textureSample(src_tex, src_sampler, in.uv + vec2<f32>( texel.x,  texel.y));
+    c += blur_tap(in.uv + vec2<f32>(-texel.x, -texel.y));
+    c += blur_tap(in.uv + vec2<f32>( texel.x, -texel.y));
+    c += blur_tap(in.uv + vec2<f32>(-texel.x,  texel.y));
+    c += blur_tap(in.uv + vec2<f32>( texel.x,  texel.y));
 
-    return c * (1.0 / 8.0);
+    return blur_encode(c * (1.0 / 8.0));
 }
 
 struct MaterialGpu {
@@ -566,16 +601,16 @@ fn fs_blur_h(in: FullscreenOut) -> @location(0) vec4<f32> {
     let texel = 1.0 / vec2<f32>(textureDimensions(src_tex));
     let step = blur_tap_step(blur_radius, texel.x);
 
-    var sum = textureSample(src_tex, src_sampler, in.uv) * BLUR_W0;
-    sum += textureSample(src_tex, src_sampler, in.uv + vec2<f32>(1.0 * step, 0.0)) * BLUR_W1;
-    sum += textureSample(src_tex, src_sampler, in.uv - vec2<f32>(1.0 * step, 0.0)) * BLUR_W1;
-    sum += textureSample(src_tex, src_sampler, in.uv + vec2<f32>(2.0 * step, 0.0)) * BLUR_W2;
-    sum += textureSample(src_tex, src_sampler, in.uv - vec2<f32>(2.0 * step, 0.0)) * BLUR_W2;
-    sum += textureSample(src_tex, src_sampler, in.uv + vec2<f32>(3.0 * step, 0.0)) * BLUR_W3;
-    sum += textureSample(src_tex, src_sampler, in.uv - vec2<f32>(3.0 * step, 0.0)) * BLUR_W3;
-    sum += textureSample(src_tex, src_sampler, in.uv + vec2<f32>(4.0 * step, 0.0)) * BLUR_W4;
-    sum += textureSample(src_tex, src_sampler, in.uv - vec2<f32>(4.0 * step, 0.0)) * BLUR_W4;
-    return sum;
+    var sum = blur_tap(in.uv) * BLUR_W0;
+    sum += blur_tap(in.uv + vec2<f32>(1.0 * step, 0.0)) * BLUR_W1;
+    sum += blur_tap(in.uv - vec2<f32>(1.0 * step, 0.0)) * BLUR_W1;
+    sum += blur_tap(in.uv + vec2<f32>(2.0 * step, 0.0)) * BLUR_W2;
+    sum += blur_tap(in.uv - vec2<f32>(2.0 * step, 0.0)) * BLUR_W2;
+    sum += blur_tap(in.uv + vec2<f32>(3.0 * step, 0.0)) * BLUR_W3;
+    sum += blur_tap(in.uv - vec2<f32>(3.0 * step, 0.0)) * BLUR_W3;
+    sum += blur_tap(in.uv + vec2<f32>(4.0 * step, 0.0)) * BLUR_W4;
+    sum += blur_tap(in.uv - vec2<f32>(4.0 * step, 0.0)) * BLUR_W4;
+    return blur_encode(sum);
 }
 
 @fragment
@@ -584,16 +619,16 @@ fn fs_blur_v(in: FullscreenOut) -> @location(0) vec4<f32> {
     let texel = 1.0 / vec2<f32>(textureDimensions(src_tex));
     let step = blur_tap_step(blur_radius, texel.y);
 
-    var sum = textureSample(src_tex, src_sampler, in.uv) * BLUR_W0;
-    sum += textureSample(src_tex, src_sampler, in.uv + vec2<f32>(0.0, 1.0 * step)) * BLUR_W1;
-    sum += textureSample(src_tex, src_sampler, in.uv - vec2<f32>(0.0, 1.0 * step)) * BLUR_W1;
-    sum += textureSample(src_tex, src_sampler, in.uv + vec2<f32>(0.0, 2.0 * step)) * BLUR_W2;
-    sum += textureSample(src_tex, src_sampler, in.uv - vec2<f32>(0.0, 2.0 * step)) * BLUR_W2;
-    sum += textureSample(src_tex, src_sampler, in.uv + vec2<f32>(0.0, 3.0 * step)) * BLUR_W3;
-    sum += textureSample(src_tex, src_sampler, in.uv - vec2<f32>(0.0, 3.0 * step)) * BLUR_W3;
-    sum += textureSample(src_tex, src_sampler, in.uv + vec2<f32>(0.0, 4.0 * step)) * BLUR_W4;
-    sum += textureSample(src_tex, src_sampler, in.uv - vec2<f32>(0.0, 4.0 * step)) * BLUR_W4;
-    return sum;
+    var sum = blur_tap(in.uv) * BLUR_W0;
+    sum += blur_tap(in.uv + vec2<f32>(0.0, 1.0 * step)) * BLUR_W1;
+    sum += blur_tap(in.uv - vec2<f32>(0.0, 1.0 * step)) * BLUR_W1;
+    sum += blur_tap(in.uv + vec2<f32>(0.0, 2.0 * step)) * BLUR_W2;
+    sum += blur_tap(in.uv - vec2<f32>(0.0, 2.0 * step)) * BLUR_W2;
+    sum += blur_tap(in.uv + vec2<f32>(0.0, 3.0 * step)) * BLUR_W3;
+    sum += blur_tap(in.uv - vec2<f32>(0.0, 3.0 * step)) * BLUR_W3;
+    sum += blur_tap(in.uv + vec2<f32>(0.0, 4.0 * step)) * BLUR_W4;
+    sum += blur_tap(in.uv - vec2<f32>(0.0, 4.0 * step)) * BLUR_W4;
+    return blur_encode(sum);
 }
 
 @fragment
@@ -620,7 +655,11 @@ fn vs_material(
     let local = quad[vert_idx];
     let inst  = materials.data[inst_idx];
 
-    let pixel = inst.frame.xy + local * inst.frame.zw;
+    // Room above the frame for a tail; uv stays relative to the frame, so
+    // it runs below 0 over the tail.
+    let tail_len = max(inst.params3.z, 0.0);
+    let lo = inst.frame.xy - vec2<f32>(0.0, tail_len);
+    let pixel = lo + local * (inst.frame.zw + vec2<f32>(0.0, tail_len));
     let ndc = vec2<f32>(
          (pixel.x / globals.resolution.x) * 2.0 - 1.0,
         -((pixel.y / globals.resolution.y) * 2.0 - 1.0),
@@ -628,10 +667,37 @@ fn vs_material(
 
     var out: MaterialVSOut;
     out.position       = vec4<f32>(ndc, 0.0, 1.0);
-    out.uv             = local;
+    out.uv             = (pixel - inst.frame.xy) / max(inst.frame.zw, vec2<f32>(1e-3));
     out.size           = inst.frame.zw;
     out.instance_index = inst_idx;
     return out;
+}
+
+// Signed distance to an isosceles triangle with its apex at the origin
+// and its base `q.y` below it, `2 q.x` wide (y down).
+fn sd_isosceles(p_in: vec2<f32>, q: vec2<f32>) -> f32 {
+    let p = vec2<f32>(abs(p_in.x), p_in.y);
+    let a = p - q * clamp(dot(p, q) / dot(q, q), 0.0, 1.0);
+    let b = p - q * vec2<f32>(clamp(p.x / q.x, 0.0, 1.0), 1.0);
+    let s = -sign(q.y);
+    let d = min(vec2<f32>(dot(a, a), s * (p.x * q.y - p.y * q.x)), vec2<f32>(dot(b, b), s * (p.y - q.y)));
+    return -sqrt(d.x) * sign(d.y);
+}
+
+// A shape's distance `d` joined with a tail out of its top edge: a
+// triangle with a rounded apex, `tail.x` along the edge from its middle,
+// reaching `tail.y` above it, flared into the edge by a smooth union.
+fn with_tail(d: f32, p: vec2<f32>, half: vec2<f32>, tail: vec2<f32>) -> f32 {
+    let len = tail.y;
+    if (len <= 0.0) {
+        return d;
+    }
+    let round = len * 0.18;
+    let apex = vec2<f32>(tail.x, -half.y - len + round);
+    let t = sd_isosceles(p - apex, vec2<f32>(len * 1.25, len + 4.0)) - round;
+    let k = len * 0.6;
+    let m = max(k - abs(d - t), 0.0) / k;
+    return min(d, t) - m * m * k * 0.25;
 }
 
 @fragment
@@ -653,7 +719,7 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     let specular      = inst.params.w;
 
     let p    = (in.uv - vec2<f32>(0.5)) * in.size;
-    let dist = sd_rounded_rect(p, half, corner_radius, corner_n);
+    let dist = with_tail(sd_rounded_rect(p, half, corner_radius, corner_n), p, half, inst.params3.yz);
     let aa   = length(vec2<f32>(dpdx(dist), dpdy(dist)));
 
     let fill_mask   = smoothstep(aa, -aa, dist);
@@ -757,7 +823,9 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
 
     var color = vec4<f32>(0.0);
     color = mix(color, vec4<f32>(lit, 1.0), fill_mask);
-    color = mix(color, inst.border_color,   border_mask);
+    // `color` is premultiplied here: the border goes over it as such.
+    let edge_a = inst.border_color.a * border_mask;
+    color = color * (1.0 - edge_a) + vec4<f32>(inst.border_color.rgb * edge_a, edge_a);
 
     let rim_mask = 1.0 - smoothstep(0.0, RIM_WIDTH, abs(dist));
     let rim_axis = normalize(vec2<f32>(-1.0, -1.0));

@@ -90,6 +90,35 @@ public struct MaterialFilledShape<S: View>: View {
     public var body: Never { fatalError() }
     let shape: S
     let material: Material
+    var tailOffset: Float = 0
+    var tailLength: Float = 0
+    var edgeColor: Color = .clear
+    var edgeWidth: Float = 0
+
+    init(shape: S, material: Material) {
+        self.shape = shape
+        self.material = material
+    }
+
+    /// Gives the shape a tail out of its top edge, as a popover points at
+    /// what opened it: `offset` points along the edge from its middle
+    /// (right is positive), reaching `length` points above it. The tail is
+    /// part of the material, joined to the edge by a smooth curve, and is
+    /// drawn outside the shape's frame without taking layout space.
+    public func tail(at offset: Float, length: Float) -> Self {
+        var copy = self
+        copy.tailOffset = offset
+        copy.tailLength = max(length, 0)
+        return copy
+    }
+
+    /// A line just inside the outline, tail included.
+    public func edge(_ color: Color, width: Float = 1) -> Self {
+        var copy = self
+        copy.edgeColor = color
+        copy.edgeWidth = width
+        return copy
+    }
 }
 
 extension MaterialFilledShape {
@@ -102,6 +131,10 @@ extension MaterialFilledShape {
         node.progressiveStart = material.progressiveStart
         node.sizing = SF_SIZING_FILL
         node.cornerRadius = shapeCornerRadius(shape) ?? 0
+        let scale = DeviceScale.current
+        node.tailOffset = tailOffset * scale
+        node.tailLength = tailLength * scale
+        node.border = SFBorder(color: edgeColor.toSFColor(), width: edgeWidth * scale, _pad: (0, 0, 0))
         return node
     }
 }
