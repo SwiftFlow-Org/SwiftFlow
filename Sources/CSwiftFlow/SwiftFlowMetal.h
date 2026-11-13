@@ -38,6 +38,10 @@ typedef enum : uint32_t {
     SF_NODE_SCROLL = 6,
 
     SF_NODE_ICON   = 7,
+
+    // Drawn by the app's own wgpu painter, registered in Rust under the
+    // node's imageID. Sized and clipped like an image.
+    SF_NODE_CANVAS = 8,
 } SFNodeKind;
 
 typedef enum : uint32_t {
@@ -171,6 +175,10 @@ void swiftflow_init(SFSurfaceDescriptor surface, uint32_t width, uint32_t height
 void swiftflow_resize(uint32_t width, uint32_t height);
 
 void swiftflow_surface_invalidated(void);
+
+// True when an app canvas painter asked for a frame since the last call;
+// clears the request. Hosts poll it every tick (see Canvas.takeFrameRequest).
+_Bool swiftflow_canvas_take_frame_request(void);
 
 void sf_render_tree(void* root, float width, float height, float scale);
 

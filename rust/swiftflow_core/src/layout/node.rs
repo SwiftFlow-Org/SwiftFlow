@@ -12,6 +12,10 @@ pub enum SFNodeKind {
     Scroll = 6,
 
     Icon = 7,
+
+    /// A rectangle the app draws into itself, with wgpu, through the
+    /// painter registered under `image_id` (see `swiftflow_wgpu::canvas`).
+    Canvas = 8,
 }
 
 #[repr(u32)]

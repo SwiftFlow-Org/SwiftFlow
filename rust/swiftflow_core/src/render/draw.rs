@@ -148,6 +148,13 @@ pub enum DrawCommand {
         content_mode: SFContentMode,
         tint: SFColor,
     },
+
+    /// Hands `frame` to the app's painter `canvas_id` at this point in the
+    /// draw order.
+    Canvas {
+        frame: SFRect,
+        canvas_id: u32,
+    },
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -307,6 +314,10 @@ impl DrawList {
             content_mode,
             tint,
         });
+    }
+
+    pub fn canvas(&mut self, frame: SFRect, canvas_id: u32) {
+        self.push(DrawCommand::Canvas { frame, canvas_id });
     }
 
     pub fn push_clip(&mut self, frame: SFRect) {

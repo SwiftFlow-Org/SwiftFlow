@@ -63,10 +63,17 @@ public final class GestureRouter {
 
     /// Delivers a raw pointer event to the view captured on `down`.
     private func firePointer(
-        _ phase: PointerEvent.Phase, on node: UInt32, x: Float, y: Float, scale: Float
+        _ phase: PointerEvent.Phase, on node: UInt32, x: Float, y: Float, t: Double, scale: Float
     ) {
         guard let handler = PointerRegistry.shared.handlers[node] else { return }
-        handler(PointerEvent(phase: phase, location: local(x, y, in: node, scale: scale)))
+        let stylus = Stylus.shared
+        handler(PointerEvent(
+            phase: phase,
+            location: local(x, y, in: node, scale: scale),
+            tool: stylus.tool,
+            stylus: stylus.current,
+            timestamp: t
+        ))
         NodeRegistry.shared.needsRender = true
     }
 
@@ -93,7 +100,7 @@ public final class GestureRouter {
         }
 
         if press.pointerNode != 0 {
-            firePointer(.down, on: press.pointerNode, x: x, y: y, scale: scale)
+            firePointer(.down, on: press.pointerNode, x: x, y: y, t: t, scale: scale)
         }
 
         if press.tapNode != 0 {
@@ -170,7 +177,7 @@ public final class GestureRouter {
         }
 
         if press.pointerNode != 0 {
-            firePointer(.moved, on: press.pointerNode, x: x, y: y, scale: scale)
+            firePointer(.moved, on: press.pointerNode, x: x, y: y, t: t, scale: scale)
         }
 
         // Interactive glass follows the finger while it is held, so its
@@ -286,7 +293,7 @@ public final class GestureRouter {
         let registry = GestureRegistry.shared
 
         if press.pointerNode != 0 {
-            firePointer(.up, on: press.pointerNode, x: x, y: y, scale: scale)
+            firePointer(.up, on: press.pointerNode, x: x, y: y, t: t, scale: scale)
         }
 
         if press.phase == .drag, let gesture = registry.drags[press.dragNode] {

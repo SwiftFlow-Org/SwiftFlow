@@ -48,6 +48,7 @@ public final class AndroidHost {
         }
 
         let anyAnimationActive = NodeRegistry.shared.hasActiveAnimations
+            || Canvas.takeFrameRequest()
 
         let anyGestureActive = GestureRouter.shared.needsFrames
         guard NodeRegistry.shared.needsRender || anyScrollActive || anyAnimationActive

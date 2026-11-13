@@ -144,7 +144,7 @@ pub fn layout(node: &mut SFNode, available: SFRect) {
             }
         }
 
-        SFNodeKind::Image => {
+        SFNodeKind::Image | SFNodeKind::Canvas => {
             node.frame = resolve_frame(node, available);
         }
     }

@@ -1,3 +1,4 @@
+pub mod canvas;
 mod text;
 use text::TextRenderer;
 
@@ -267,6 +268,9 @@ enum Batch {
     Material(usize),
 
     Image { index: usize, id: u32 },
+
+    /// An app-drawn canvas: physical-pixel rect and clip.
+    Canvas { id: u32, rect: [f32; 4], clip: [f32; 4] },
 }
 
 #[repr(C)]
@@ -1438,6 +1442,13 @@ impl SFBackend for WgpuBackend {
                         _ => self.batches.push(Batch::Text(idx..idx + 1)),
                     }
                 }
+                DrawCommand::Canvas { frame, canvas_id } => {
+                    self.batches.push(Batch::Canvas {
+                        id: *canvas_id,
+                        rect: [frame.x, frame.y, frame.width, frame.height],
+                        clip: clip_rect_of(clip),
+                    });
+                }
                 DrawCommand::Image {
                     frame,
                     corner_radius,
@@ -1557,26 +1568,40 @@ impl SFBackend for WgpuBackend {
             });
         }
 
+        // Materials and canvases each need the scene pass closed around
+        // them: a material reads back what is under it, and a canvas records
+        // its own passes. Everything between them batches into one pass.
         enum Run<'a> {
             Scene(&'a [Batch]),
             Material(usize),
+            Canvas { id: u32, rect: [f32; 4], clip: [f32; 4] },
         }
+        let breaks_scene = |b: &Batch| matches!(b, Batch::Material(_) | Batch::Canvas { .. });
         let mut runs: Vec<Run> = Vec::new();
         {
             let mut i = 0;
             while i < self.batches.len() {
-                if let Batch::Material(idx) = self.batches[i] {
-                    runs.push(Run::Material(idx));
-                    i += 1;
-                } else {
-                    let start = i;
-                    while i < self.batches.len() && !matches!(self.batches[i], Batch::Material(_)) {
+                match self.batches[i] {
+                    Batch::Material(idx) => {
+                        runs.push(Run::Material(idx));
                         i += 1;
                     }
-                    runs.push(Run::Scene(&self.batches[start..i]));
+                    Batch::Canvas { id, rect, clip } => {
+                        runs.push(Run::Canvas { id, rect, clip });
+                        i += 1;
+                    }
+                    _ => {
+                        let start = i;
+                        while i < self.batches.len() && !breaks_scene(&self.batches[i]) {
+                            i += 1;
+                        }
+                        runs.push(Run::Scene(&self.batches[start..i]));
+                    }
                 }
             }
         }
+        let target_size = (self.config.width.max(1), self.config.height.max(1));
+        let scale = *swiftflow_core::ffi::SCALE.lock().unwrap();
 
         let mut text_range_idx = 0usize;
 
@@ -1627,9 +1652,25 @@ impl SFBackend for WgpuBackend {
                                     p.draw(0..6, *index as u32..*index as u32 + 1);
                                 }
                             }
-                            Batch::Material(_) => unreachable!("grouped out above"),
+                            Batch::Material(_) | Batch::Canvas { .. } => {
+                                unreachable!("grouped out above")
+                            }
                         }
                     }
+                }
+                Run::Canvas { id, rect, clip } => {
+                    let mut frame = canvas::CanvasFrame {
+                        device: &self.device,
+                        queue: &self.queue,
+                        encoder: &mut encoder,
+                        target: &self.scene_view,
+                        target_format: wgpu::TextureFormat::Bgra8Unorm,
+                        target_size,
+                        rect,
+                        visible: canvas::visible_rect(rect, clip, target_size),
+                        scale,
+                    };
+                    canvas::paint(id, &mut frame);
                 }
                 Run::Material(idx) => {
                     // Before the pyramid, and per material rather than per

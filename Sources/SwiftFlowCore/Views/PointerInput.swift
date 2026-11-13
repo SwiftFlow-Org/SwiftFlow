@@ -19,9 +19,28 @@ public struct PointerEvent {
     public let phase: Phase
     public let location: Point
 
-    public init(phase: Phase, location: Point) {
+    /// What produced the event.
+    public let tool: PointerTool
+
+    /// The pen's pressure, tilt and rotation when `tool` is `.pen` or
+    /// `.eraser`; `nil` for a mouse or a finger.
+    public let stylus: StylusSample?
+
+    /// Seconds, on the host's monotonic clock.
+    public let timestamp: Double
+
+    public init(
+        phase: Phase,
+        location: Point,
+        tool: PointerTool = .mouse,
+        stylus: StylusSample? = nil,
+        timestamp: Double = 0
+    ) {
         self.phase = phase
         self.location = location
+        self.tool = tool
+        self.stylus = stylus
+        self.timestamp = timestamp
     }
 }
 

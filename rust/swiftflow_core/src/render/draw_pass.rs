@@ -268,6 +268,13 @@ fn draw_inner(node: &SFNode, list: &mut DrawList, translate: SFPoint, scale: SFS
             list.pop_clip();
         }
 
+        SFNodeKind::Canvas => {
+            if node.image_id != 0 {
+                let frame = SFRect::new(node_origin.x, node_origin.y, node_w, node_h);
+                list.canvas(frame, node.image_id);
+            }
+        }
+
         SFNodeKind::Image => {
             let frame = SFRect::new(node_origin.x, node_origin.y, node_w, node_h);
             if node.image_id != 0 {
