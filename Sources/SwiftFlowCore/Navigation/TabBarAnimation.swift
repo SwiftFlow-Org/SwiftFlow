@@ -11,10 +11,11 @@ import CSwiftFlow
 /// Item boxes are measured rather than computed. The bar hugs its labels, so
 /// the slots are not all the same width, and interpolating between measured
 /// boxes is what lets the pill change width as it travels the way iOS 26's
-/// does. Two smaller springs ride along: `pop`, the bounce the newly selected
+/// does. Smaller springs ride along: `pop`, the bounce the newly selected
 /// icon takes, `presence`, which fades the pill out when the selection lands
-/// on a tab that sits outside the group, and `expansion`, which collapses the
-/// group behind one icon while the trailing tab grows into a search field.
+/// on a tab that sits outside the group, `expansion`, which collapses the
+/// group behind one icon while the trailing tab grows into a search field,
+/// and `wobble`, the pill's own give as it travels.
 final class TabBarAnimator {
     nonisolated(unsafe) static let shared = TabBarAnimator()
 
@@ -35,6 +36,16 @@ final class TabBarAnimator {
     private var expansionTarget: Float = 0
     private var expanding = false
 
+    /// How far the pill is drawn out along its travel (negative: squashed
+    /// in). It chases the stretch the pill's speed asks for on an underdamped
+    /// spring, so it lags as the pill sets off, catches up mid-flight, and
+    /// overshoots into a squash when the pill lands and its speed drops away
+    /// — the stretch-then-squash LiquidGlassKit gets from the lens's
+    /// acceleration.
+    private var wobble: Float = 0
+    private var wobbleVelocity: Float = 0
+    private var wobbling = false
+
     private var itemCount = 0
     private var placed = false
     private var dragging = false
@@ -46,7 +57,7 @@ final class TabBarAnimator {
     private var naturalItemHeight: Float = 0
 
     var isAnimating: Bool {
-        travelling || popping || expanding || presence != presenceTarget
+        travelling || popping || expanding || wobbling || presence != presenceTarget
     }
 
     /// How far the bar is through becoming a search field: 0 is tabs with a
@@ -89,6 +100,9 @@ final class TabBarAnimator {
             target = slot
             velocity = 0
             travelling = false
+            wobble = 0
+            wobbleVelocity = 0
+            wobbling = false
             presence = presenceTarget
             return
         }
@@ -116,6 +130,21 @@ final class TabBarAnimator {
                 position = target
                 velocity = 0
                 travelling = false
+            }
+        }
+
+        if travelling || wobbling {
+            let (x, v) = scalarSpringStep(
+                x0: wobble - stretch, v0: wobbleVelocity,
+                omega: springOmega(TabBarMetrics.wobbleResponse),
+                zeta: TabBarMetrics.wobbleDamping, dt: dt
+            )
+            wobble = min(max(stretch + x, -TabBarMetrics.pillMaxSquash), TabBarMetrics.pillMaxStretch)
+            wobbleVelocity = v
+            wobbling = travelling || abs(wobble) > 0.001 || abs(v) > 0.01
+            if !wobbling {
+                wobble = 0
+                wobbleVelocity = 0
             }
         }
 
@@ -286,7 +315,9 @@ final class TabBarAnimator {
         )
     }
 
-    /// How far the pill runs past its own width, as a fraction of it.
+    /// How far the pill's speed asks it to run past its own width, as a
+    /// fraction of it. The pill does not take this directly: `wobble` chases
+    /// it.
     private var stretch: Float {
         min(abs(velocity) * TabBarMetrics.pillStretchPerVelocity, TabBarMetrics.pillMaxStretch)
     }
@@ -313,18 +344,22 @@ final class TabBarAnimator {
 
         // Glass reaches ahead of itself. Most of the give goes on the leading
         // edge, the rest trails, and the width it gains it loses in height.
-        let give = stretch * width
+        // Once it has stopped, the squash it lands in is shared evenly, so it
+        // settles about its own middle.
+        let give = wobble * width
         width += give
-        if velocity > 0 {
+        if velocity > 0.05 {
             x -= give * (1 - TabBarMetrics.pillStretchBias)
-        } else if velocity < 0 {
+        } else if velocity < -0.05 {
             x -= give * TabBarMetrics.pillStretchBias
+        } else {
+            x -= give / 2
         }
 
         return TabPillGeometry(
             x: x,
             width: width,
-            squash: 1 - stretch * TabBarMetrics.pillSquash,
+            squash: 1 - wobble * TabBarMetrics.pillSquash,
             opacity: presence
         )
     }

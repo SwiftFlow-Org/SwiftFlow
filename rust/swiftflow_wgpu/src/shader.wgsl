@@ -111,49 +111,138 @@ const RIM_INTENSITY: f32   = 0.4;
 const RIM_POWER: f32       = 2.0;
 const RIM_COLOR: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0);
 
-const GLASS_EDGE_BAND: f32 = 12.0;
+// The lip: a quarter-round bevel running in from the border. Its width
+// follows the refraction (both arrive in pixels, so it scales with the
+// screen), clamped so a small pane is not all lip and a thin one does not
+// fold over itself.
+const GLASS_THICKNESS_PER_BEND: f32 = 1.5;
 const GLASS_MIN_THICKNESS: f32 = 12.0;
+
 const GLASS_RIM_SHARPNESS: f32 = 0.95;
 const GLASS_BLUR_DISPLACE: f32 = 0.35;
 const GLASS_ADAPTIVE: f32 = 0.25;
 const GLASS_PRESS_REFRACTION: f32 = 0.25;
 const GLASS_PRESS_RIM: f32 = 0.8;
-const GLASS_IOR: f32 = 1.55;
-const GLASS_ETA: f32 = 1.0 / GLASS_IOR;
+// How much a held pane magnifies what is under it, about its own centre.
+const GLASS_PRESS_ZOOM: f32 = 0.08;
+const GLASS_IOR: f32 = 1.5;
+// The sine of the lip's tilt at the border. 1 would stand it vertical, as
+// LiquidGlassKit's does, but then the displacement jumps by a third of the
+// bend inside the last pixel and the rim stair-steps. Just short of vertical
+// keeps the same curve with a slope a pixel can sample.
+const GLASS_LIP_SINE: f32 = 0.92;
+// Red and blue get their own index either side of green's, so they bend by
+// different amounts and fringe where the bend is steepest.
 const GLASS_DISPERSION: f32 = 0.04;
+const GLASS_VIBRANCY: f32 = 0.0;
 
-const FRESNEL_POWER: f32 = 5.0;
+// An even, faint brightening around the whole rim.
 const FRESNEL_INTENSITY: f32 = 0.04;
 
+// The glare is a pair of lobes on opposite sides of the rim, the brighter
+// one facing GLARE_DIR. It lightens the backdrop rather than painting white
+// over it, and pushes its chroma a little, so a highlight over a red photo
+// reads as a brighter red.
 const GLARE_DIR: vec2<f32> = vec2<f32>(-0.70710678, -0.70710678);
-const GLARE_POWER: f32 = 6.0;
+const GLARE_POWER: f32 = 1.5;
 const GLARE_INTENSITY: f32 = 1.0;
-
-const GLARE_BACK: f32 = 0.3;
+const GLARE_BACK: f32 = 0.45;
+// The width of the lit band, as a share of the lip.
+const GLARE_BAND: f32 = 0.6;
+const GLARE_LIGHTEN: f32 = 0.3;
+const GLARE_CHROMA: f32 = 0.8;
 
 const SHADOW_POWER: f32 = 3.0;
 const SHADOW_DEPTH: f32 = 0.05;
 
-const GLASS_VIBRANCY: f32 = 0.0;
-
-const GLASS_REFRACT_BAND: f32 = 28.0;   // width of the edge band, px — the "refraction band"
-const GLASS_REFRACT_PULL: f32 = 1.3;    // how far past the edge it grabs content (bigger = more squish)
-
-fn bevel_normal(outward: vec2<f32>, t: f32) -> vec3<f32> {
-    let u = 1.0 - clamp(t, 0.0, 1.0);
-    let h = sqrt(max(1.0 - u * u, 0.0));
-
-    let slope = u / max(h, 1e-3);
-    return normalize(vec3<f32>(-outward * slope, 1.0));
-}
-
-fn refract_offset(n: vec3<f32>, eta: f32) -> vec2<f32> {
-    let r = refract(vec3<f32>(0.0, 0.0, -1.0), n, eta);
-    return r.xy / sqrt(max(1.0 - GLASS_ETA * GLASS_ETA, 1e-6));
-}
-
 fn refraction_active(refraction: f32) -> f32 {
     return step(0.001, refraction);
+}
+
+fn glass_thickness(refraction: f32, half: vec2<f32>) -> f32 {
+    let wanted = max(refraction * GLASS_THICKNESS_PER_BEND, GLASS_MIN_THICKNESS);
+    return max(min(wanted, min(half.x, half.y)), 1.0);
+}
+
+// How far a ray falling straight down is carried sideways by the lip, `depth`
+// pixels in from the border, for glass of index `ior`.
+//
+// The lip's surface tilts from flat at the inner end to near vertical at
+// the border; r² is the sine of that tilt (the profile LiquidGlassKit uses).
+// The ray meets the surface at that angle, Snell's law bends it to a
+// shallower one, and the difference is how far off straight down it
+// travels. The result is scaled so green at the very border is 1: `bend` is
+// then exactly the pixels of displacement asked for there, falling away to 0
+// at the end of the lip.
+fn lip_deviation(sine: f32, ior: f32) -> f32 {
+    let incident = asin(sine);
+    return tan(incident - asin(sine / ior));
+}
+
+fn lip_shift(depth: f32, thickness: f32, ior: f32) -> f32 {
+    let r = 1.0 - clamp(depth / thickness, 0.0, 1.0);
+    return lip_deviation(r * r * GLASS_LIP_SINE, ior)
+         / lip_deviation(GLASS_LIP_SINE, GLASS_IOR);
+}
+
+// The lit band: full strength at the border, gone a little over halfway
+// across the lip, with most of it in the outer few pixels.
+fn glass_band(depth: f32, thickness: f32) -> f32 {
+    let t = 1.0 - clamp(depth / (thickness * GLARE_BAND), 0.0, 1.0);
+    return t * t * t * t * t;
+}
+
+// Two lobes along GLARE_DIR: cos² of the angle between the rim's normal and
+// the light, narrowed by GLARE_POWER, with the far side dimmed.
+fn glare_lobe(outward: vec2<f32>) -> f32 {
+    let along = dot(outward, GLARE_DIR);
+    let side = select(GLARE_BACK, 1.0, along > 0.0);
+    return pow(along * along, GLARE_POWER) * side;
+}
+
+// Oklab, for lightening a colour without washing it out. The textures are
+// plain Unorm, so what comes in is sRGB-encoded; a 2.2 power is close enough
+// for a highlight.
+fn glass_to_oklab(srgb: vec3<f32>) -> vec3<f32> {
+    let c = pow(max(srgb, vec3<f32>(0.0)), vec3<f32>(2.2));
+    let l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b;
+    let m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b;
+    let s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b;
+    let lms = pow(vec3<f32>(l, m, s), vec3<f32>(1.0 / 3.0));
+    return vec3<f32>(
+        0.2104542553 * lms.x + 0.7936177850 * lms.y - 0.0040720468 * lms.z,
+        1.9779984951 * lms.x - 2.4285922050 * lms.y + 0.4505937099 * lms.z,
+        0.0259040371 * lms.x + 0.7827717662 * lms.y - 0.8086757660 * lms.z,
+    );
+}
+
+fn glass_from_oklab(lab: vec3<f32>) -> vec3<f32> {
+    let l_ = lab.x + 0.3963377774 * lab.y + 0.2158037573 * lab.z;
+    let m_ = lab.x - 0.1055613458 * lab.y - 0.0638541728 * lab.z;
+    let s_ = lab.x - 0.0894841775 * lab.y - 1.2914855480 * lab.z;
+    let l = l_ * l_ * l_;
+    let m = m_ * m_ * m_;
+    let s = s_ * s_ * s_;
+    let c = vec3<f32>(
+         4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+        -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+        -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+    );
+    return pow(clamp(c, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2));
+}
+
+// Lightens `rgb` by `amount` of a glare, keeping and slightly raising its
+// chroma. 0 returns the colour as it was.
+fn glare_tone(rgb: vec3<f32>, amount: f32) -> vec3<f32> {
+    if (amount <= 0.0) {
+        return rgb;
+    }
+    let lab = glass_to_oklab(rgb);
+    let lit = vec3<f32>(
+        min(lab.x + GLARE_LIGHTEN * amount, 1.0),
+        lab.yz * (1.0 + GLARE_CHROMA * amount),
+    );
+    return glass_from_oklab(lit);
 }
 
 fn sd_clip_rect(p: vec2<f32>, half: vec2<f32>, radii: vec4<f32>) -> f32 {
@@ -570,27 +659,32 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
 
     let glass = refraction_active(refraction);
 
-    let bevel = min(min(half.x, half.y), GLASS_EDGE_BAND);
+    let depth = max(-dist, 0.0);
+    let thickness = glass_thickness(refraction, half);
+    let edge = 1.0 - smoothstep(0.0, 1.0, depth / thickness);
+    let bend = refraction * (1.0 + interactive * GLASS_PRESS_REFRACTION) * glass;
 
-    let depth = clamp(-dist / bevel, 0.0, 1.0);
-
-    let edge = 1.0 - smoothstep(0.0, 1.0, depth);
-
-    let bend = refraction * (1.0 + interactive * GLASS_PRESS_REFRACTION);
-
-    let n3 = bevel_normal(normal, depth);
     let screen_uv = in.position.xy / globals.resolution;
 
-    let base_off = refract_offset(n3, GLASS_ETA) * bend / globals.resolution;
-    let off_r    = refract_offset(n3, GLASS_ETA * (1.0 + GLASS_DISPERSION)) * bend / globals.resolution;
-    let off_b    = refract_offset(n3, GLASS_ETA * (1.0 - GLASS_DISPERSION)) * bend / globals.resolution;
+    // A held pane lifts and magnifies what is under it. The zoom is about the
+    // pane's own centre, so the content under its middle stays put.
+    let centre = inst.frame.xy + inst.frame.zw * 0.5;
+    let zoom = 1.0 / (1.0 + interactive * GLASS_PRESS_ZOOM * glass);
+    let lens_uv = (centre + (in.position.xy - centre) * zoom) / globals.resolution;
 
-    let n2 = normalize(normal);
+    // The lip is convex, so a ray through it lands further in than it
+    // entered: each fragment shows what is under a point closer to the
+    // middle, which stretches the content outward across the lip. Blue bends
+    // most, red least, so the fringe falls the way a prism's does.
+    let inward = -normal * bend / globals.resolution;
+    let off_g = inward * lip_shift(depth, thickness, GLASS_IOR);
+    let off_r = inward * lip_shift(depth, thickness, GLASS_IOR * (1.0 - GLASS_DISPERSION));
+    let off_b = inward * lip_shift(depth, thickness, GLASS_IOR * (1.0 + GLASS_DISPERSION));
 
-    let sharp_uv = clamp(screen_uv + base_off, vec2<f32>(0.0), vec2<f32>(1.0));
-    let soft_uv  = clamp(screen_uv + base_off * GLASS_BLUR_DISPLACE, vec2<f32>(0.0), vec2<f32>(1.0));
-    let uv_r     = clamp(screen_uv + off_r, vec2<f32>(0.0), vec2<f32>(1.0));
-    let uv_b     = clamp(screen_uv + off_b, vec2<f32>(0.0), vec2<f32>(1.0));
+    let sharp_uv = clamp(lens_uv + off_g, vec2<f32>(0.0), vec2<f32>(1.0));
+    let soft_uv  = clamp(lens_uv + off_g * GLASS_BLUR_DISPLACE, vec2<f32>(0.0), vec2<f32>(1.0));
+    let uv_r     = clamp(lens_uv + off_r, vec2<f32>(0.0), vec2<f32>(1.0));
+    let uv_b     = clamp(lens_uv + off_b, vec2<f32>(0.0), vec2<f32>(1.0));
 
     let sharp = vec3<f32>(
         textureSample(scene_tex, blur_sampler, uv_r).r,
@@ -628,33 +722,14 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
         clamp(level - 1.0, 0.0, 1.0)
     );
 
+    // Glass is sharp across its lip and, with clarity, all the way in. A
+    // material has no lip, so `glass` keeps this a plain blur for it.
     let clarity = inst.params3.x;
     let backdrop_rgb = mix(
         soft_progressive, sharp, max(clarity, edge * GLASS_RIM_SHARPNESS) * glass);
 
-    // Reflect across the edge: dist<0 inside, so -2*dist moves outward by 2|dist|,
-    // sampling the content the same distance beyond the edge and bringing it in
-    // inverted. Fills the whole bevel band — that's the wide meniscus.
-    // Edge factor: 0 in the flat interior, ramps to 1 at the very rim.
-    let eb = 1.0 - clamp(-dist / GLASS_REFRACT_BAND, 0.0, 1.0);
-
-    // Pull the sample OUTWARD (n2 is the outward normal) so the band shows the
-    // content just outside the pill, compressed inward — the iOS lens edge.
-    // eb*eb ramps it nonlinearly so the squish concentrates near the rim.
-    let refract_uv = clamp(
-        screen_uv - n2 * (eb * eb) * GLASS_REFRACT_BAND * GLASS_REFRACT_PULL / globals.resolution,
-        vec2<f32>(0.0), vec2<f32>(1.0)
-    );
-    let refracted = textureSample(scene_tex, blur_sampler, refract_uv).rgb;
-
-    // Only glass bends its edge. A material is a blur with a tint on it, so
-    // gating on `glass` here is what keeps the lens off every backdrop in the
-    // app — both arrive at this shader as a rect with a blur radius, and
-    // refraction is the only thing that tells them apart.
-    let backdrop_edged = mix(backdrop_rgb, refracted, smoothstep(0.0, 0.35, eb) * glass);
-
-    let bd_luma = dot(backdrop_edged, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let vibrant = mix(vec3<f32>(bd_luma), backdrop_edged, 1.0 + GLASS_VIBRANCY * glass);
+    let bd_luma = dot(backdrop_rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let vibrant = mix(vec3<f32>(bd_luma), backdrop_rgb, 1.0 + GLASS_VIBRANCY * glass);
 
     let luma = dot(soft, vec3<f32>(0.2126, 0.7152, 0.0722));
     let adaptive = mix(inst.tint.rgb, vec3<f32>(luma), GLASS_ADAPTIVE * glass);
@@ -663,40 +738,30 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     // at full alpha and leave no edge where it stops.
     let tinted = mix(vibrant, adaptive, inst.tint.a * ramp);
 
-    var color = vec4<f32>(0.0);
-    color = mix(color, vec4<f32>(tinted, 1.0), fill_mask);
-    color = mix(color, inst.border_color,      border_mask);
-
+    // Light on the lip. All of it is gated on `glass`; a plain material only
+    // gets the thin trim further down.
     let rim_gain = 1.0 + interactive * GLASS_PRESS_RIM;
-    let rim_mask = 1.0 - smoothstep(0.0, RIM_WIDTH, abs(dist));
+    let band = glass_band(depth, thickness) * specular * rim_gain * glass;
+    let glare = glare_lobe(normal) * GLARE_INTENSITY * band;
+    let fresnel = FRESNEL_INTENSITY * band;
+    let away = max(-dot(normal, GLARE_DIR), 0.0);
+    let shade = pow(away, SHADOW_POWER) * SHADOW_DEPTH * band / rim_gain;
 
+    let lit = max(glare_tone(tinted, glare) + RIM_COLOR * fresnel - shade, vec3<f32>(0.0));
+
+    var color = vec4<f32>(0.0);
+    color = mix(color, vec4<f32>(lit, 1.0), fill_mask);
+    color = mix(color, inst.border_color,   border_mask);
+
+    let rim_mask = 1.0 - smoothstep(0.0, RIM_WIDTH, abs(dist));
     let rim_axis = normalize(vec2<f32>(-1.0, -1.0));
     let facing   = abs(dot(normal, rim_axis));
-    let trim     = pow(facing, RIM_POWER) * rim_mask * RIM_INTENSITY;
-
-    let fresnel = pow(1.0 - n3.z, FRESNEL_POWER);
-
-    let toward = max(dot(normal, GLARE_DIR), 0.0);
-    let away   = max(dot(normal, -GLARE_DIR), 0.0);
-    let glare  = pow(toward, GLARE_POWER) + pow(away, GLARE_POWER) * GLARE_BACK;
-    let lit    = fresnel * FRESNEL_INTENSITY + glare * GLARE_INTENSITY;
-
-    let highlight = mix(trim, lit * rim_mask, glass) * specular * rim_gain;
-    color = vec4<f32>(color.rgb + RIM_COLOR * highlight * fill_mask, color.a);
-
-    let shade = fresnel * pow(away, SHADOW_POWER) * SHADOW_DEPTH * specular * glass;
-    color = vec4<f32>(max(color.rgb - shade * fill_mask, vec3<f32>(0.0)), color.a);
-
-
+    let trim     = pow(facing, RIM_POWER) * rim_mask * RIM_INTENSITY * specular * rim_gain * (1.0 - glass);
+    color = vec4<f32>(color.rgb + RIM_COLOR * trim * fill_mask, color.a);
 
     let screen = inst.frame.xy + in.uv * inst.frame.zw;
     let clip = clip_coverage(screen, inst.clip_rect, inst.clip_radii);
 
-    // Straight alpha on the way out. Everything above is premultiplied by
-    // coverage, and the pipeline blends with ALPHA_BLENDING, which multiplies
-    // by it again — that second multiply is what darkens a half-covered edge
-    // pixel into a line. Invisible while the pane also faded out there;
-    // plainly a black hairline once it stopped.
     // Straight alpha on the way out. Everything above is premultiplied by
     // coverage, and the pipeline blends with ALPHA_BLENDING, which multiplies
     // by it again — that second multiply is what darkens a half-covered edge

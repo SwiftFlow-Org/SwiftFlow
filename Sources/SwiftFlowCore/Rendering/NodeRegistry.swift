@@ -58,6 +58,7 @@ public final class NodeRegistry {
 
             || TabBarAnimator.shared.isAnimating
             || SheetDrag.shared.isAnimating
+            || GlassPress.shared.isAnimating
     }
 
     public func stepAnimations(dt: Float) {
@@ -73,6 +74,7 @@ public final class NodeRegistry {
 
         TabBarAnimator.shared.step(dt: dt)
         SheetDrag.shared.step(dt: dt)
+        GlassPress.shared.step(dt: dt)
     }
 
     func registerTap(_ id: UInt32, action: @escaping () -> Void) {

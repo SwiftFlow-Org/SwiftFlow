@@ -83,7 +83,7 @@ extension GlassEffectModifier {
         backdrop.blurRadius = glass.blurRadius * DeviceScale.current
 
         backdrop.glassRefraction = glass.refraction * DeviceScale.current
-        backdrop.glassInteractive = isPressed(fg) ? 1 : 0
+        backdrop.glassInteractive = pressAmount(fg)
         backdrop.glassClarity = glass.clarity
 
 
@@ -109,10 +109,88 @@ extension GlassEffectModifier {
         return node
     }
 
-    private func isPressed(_ content: SFNode) -> Bool {
-        guard glass.isInteractive, content.node_id != 0 else { return false }
-        return NodeRegistry.shared.pressedNodes.contains(content.node_id)
+    /// How far into its press the pane is, on a spring rather than a switch,
+    /// so the bulge and the brighter rim swell in and settle back out.
+    private func pressAmount(_ content: SFNode) -> Float {
+        guard glass.isInteractive, content.node_id != 0 else { return 0 }
+        let held = NodeRegistry.shared.pressedNodes.contains(content.node_id)
+        return GlassPress.shared.amount(for: content.node_id, held: held)
     }
+}
+
+/// The press springs behind interactive glass, one per pane that has been
+/// touched.
+///
+/// A press goes in on a quick spring with some give (0.4s, 0.7 damping) and
+/// comes back out on a slower, steadier one (0.5s, 0.8), the pair
+/// LiquidGlassKit lifts and drops its lens on. The value can run a little
+/// past 1 on the way in; the shader takes that as a slightly deeper bend,
+/// which is the overshoot that makes it read as liquid.
+final class GlassPress {
+    nonisolated(unsafe) static let shared = GlassPress()
+
+    private struct Spring {
+        var value: Float = 0
+        var velocity: Float = 0
+        var held = false
+
+        var isSettled: Bool {
+            velocity == 0 && value == (held ? 1 : 0)
+        }
+    }
+
+    private var springs: [UInt32: Spring] = [:]
+
+    var isAnimating: Bool {
+        springs.values.contains { !$0.isSettled }
+    }
+
+    /// Reads the pane's press for this frame and aims its spring at whether
+    /// it is held now.
+    func amount(for id: UInt32, held: Bool) -> Float {
+        var spring = springs[id] ?? Spring()
+        if !held && spring.value == 0 && spring.velocity == 0 {
+            springs[id] = nil
+            return 0
+        }
+        spring.held = held
+        springs[id] = spring
+        return max(spring.value, 0)
+    }
+
+    func step(dt: Float) {
+        for (id, var spring) in springs where !spring.isSettled {
+            let target: Float = spring.held ? 1 : 0
+            let (response, damping) = spring.held
+                ? (GlassMotion.pressResponse, GlassMotion.pressDamping)
+                : (GlassMotion.releaseResponse, GlassMotion.releaseDamping)
+            let (x, v) = scalarSpringStep(
+                x0: spring.value - target, v0: spring.velocity,
+                omega: (2 * Float.pi) / max(response, 0.01),
+                zeta: damping, dt: dt
+            )
+            spring.value = target + x
+            spring.velocity = v
+            if abs(x) < 0.001 && abs(v) < 0.01 {
+                spring.value = target
+                spring.velocity = 0
+            }
+            springs[id] = spring
+        }
+    }
+}
+
+/// The springs glass moves on.
+enum GlassMotion {
+    static let pressResponse: Float = 0.4
+    static let pressDamping: Float = 0.7
+    static let releaseResponse: Float = 0.5
+    static let releaseDamping: Float = 0.8
+
+    /// The lift a held bar takes, as an `Animation`.
+    static let lift = Animation.spring(
+        response: Double(pressResponse), dampingFraction: Double(pressDamping)
+    )
 }
 
 extension View {

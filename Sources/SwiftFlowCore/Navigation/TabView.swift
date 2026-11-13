@@ -187,6 +187,15 @@ enum TabBarMetrics {
     /// The height the stretch costs. Glass keeps its volume.
     static let pillSquash: Float = 0.16
 
+    /// The spring the pill's stretch rides on. Looser and quicker than the
+    /// travel, so it trails the speed and wobbles once when the pill lands.
+    static let wobbleResponse: Float = 0.3
+    static let wobbleDamping: Float = 0.3
+
+    /// The furthest the landing squash pulls the pill in, as a fraction of
+    /// its width.
+    static let pillMaxSquash: Float = 0.12
+
     /// The kick the newly selected item takes, and the spring that absorbs it.
     static let popImpulse: Float = 3.2
     static let popResponse: Float = 0.3
@@ -351,7 +360,7 @@ struct TabBar: View {
                     .scale(y: pill.squash)
                     .offset(x: pill.x)
                     .scale(isDragging ? 1.07 : 1.0)
-                    .animation(.easeInOut(), value: isDragging)
+                    .animation(GlassMotion.lift, value: isDragging)
             )
             .frame(width: layout.rowWidth)
             .padding(.vertical, TabBarMetrics.groupInset)
@@ -370,7 +379,7 @@ struct TabBar: View {
                     .mergeable(true)
             )
             .scale(isDragging ? 1.07 : 1.0)
-            .animation(.easeInOut(), value: isDragging)
+            .animation(GlassMotion.lift, value: isDragging)
 
             if let searchTab {
                 TabBarSearchField(
