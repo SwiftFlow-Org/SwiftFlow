@@ -285,8 +285,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let aa = length(vec2<f32>(dpdx(dist), dpdy(dist)));
 
     let fill   = smoothstep( aa, -aa, dist);
-    let border = smoothstep( aa, -aa, dist + border_width)
-               - smoothstep( aa, -aa, dist);
+    // The band between the outer edge and border_width inside it: what is
+    // inside the outer edge less what is inside the inner one.
+    let border = smoothstep( aa, -aa, dist)
+               - smoothstep( aa, -aa, dist + border_width);
 
     var color = vec4<f32>(0.0);
     color = mix(color, in.fill,         fill);
@@ -458,8 +460,8 @@ fn fs_merged(in: MergedVertexOutput) -> @location(0) vec4<f32> {
     let aa = length(vec2<f32>(dpdx(dist), dpdy(dist)));
 
     let fill_mask   = smoothstep(aa, -aa, dist);
-    let border_mask = smoothstep(aa, -aa, dist + folded.border_width)
-                    - smoothstep(aa, -aa, dist);
+    let border_mask = smoothstep(aa, -aa, dist)
+                    - smoothstep(aa, -aa, dist + folded.border_width);
 
     var color = vec4<f32>(0.0);
     color = mix(color, folded.fill,         fill_mask);
@@ -655,7 +657,7 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
     let aa   = length(vec2<f32>(dpdx(dist), dpdy(dist)));
 
     let fill_mask   = smoothstep(aa, -aa, dist);
-    let border_mask = smoothstep(aa, -aa, dist + border_width) - smoothstep(aa, -aa, dist);
+    let border_mask = smoothstep(aa, -aa, dist) - smoothstep(aa, -aa, dist + border_width);
 
     let normal = sd_rounded_rect_normal(p, half, corner_radius, corner_n);
     let refraction = inst.params2.z;

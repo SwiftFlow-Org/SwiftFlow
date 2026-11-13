@@ -54,14 +54,14 @@ public final class NodeFrames {
 /// inside a `ForEach` row loses to the row's own key. Writing the id here
 /// instead survives that, at the price of only working on a node that claims
 /// nothing of its own.
-struct MeasuredNode<Content: View>: View {
-    typealias Body = Never
-    var body: Never { fatalError() }
+public struct MeasuredNode<Content: View>: View {
+    public typealias Body = Never
+    public var body: Never { fatalError() }
 
     let content: Content
     let identity: UInt32
 
-    func toSFNode() -> SFNode {
+    public func toSFNode() -> SFNode {
         var node = content.toSFNode()
 
         // Relabelling a node something has already registered against — a
@@ -77,8 +77,10 @@ struct MeasuredNode<Content: View>: View {
 
 extension View {
     /// Tracks this view's laid-out frame under `id`, readable on the next
-    /// build through `NodeFrames`.
-    func measured(as id: UInt32) -> MeasuredNode<Self> {
+    /// build through `NodeFrames.shared.frame(for:)`, in pixels. For placing
+    /// something against where another view was laid out, such as a
+    /// popover's tail under the button that opened it.
+    public func measured(as id: UInt32) -> MeasuredNode<Self> {
         MeasuredNode(content: self, identity: id)
     }
 }
