@@ -56,6 +56,13 @@ let rustLibDir = ProcessInfo.processInfo.environment["SWIFTFLOW_RUST_LIB_DIR"]
 // manifest-evaluation time. build-android.sh sets both.
 let isAndroid = ProcessInfo.processInfo.environment["SWIFTFLOW_PLATFORM"] == "android"
 
+// The Rust library to link, when an app brings its own. An app with canvas
+// painters builds a library that depends on SwiftFlow's host crate (so it
+// shares the one wgpu device) and exports everything this one does, then
+// names it here. Unset, each platform links SwiftFlow's stock library.
+let rustLibOverride = ProcessInfo.processInfo.environment["SWIFTFLOW_RUST_LIB_NAME"]
+    .flatMap { $0.isEmpty ? nil : $0 }
+
 // The framework is one dynamic image only on desktop, where the preview host
 // and a views dylib must share a single renderer. iOS and Android keep the
 // static product: a dynamic one there would become an embedded framework
@@ -74,7 +81,7 @@ let isDesktop = ProcessInfo.processInfo.environment["SWIFTFLOW_PLATFORM"] == "de
 let androidLinkerSettings: [LinkerSetting] = [
     .unsafeFlags([
         "-L\(rustLibDir)",
-        "-lswiftflow_android",
+        "-l\(rustLibOverride ?? "swiftflow_android")",
         "-llog",
         "-landroid",
         "-ldl",
@@ -107,9 +114,9 @@ let package = Package(
                 // already carries every sf_* symbol swiftflow_wgpu and
                 // swiftflow_core define (verified with nm). Linking both
                 // would offer the same definitions twice.
-                .linkedLibrary("swiftflow_wgpu", .when(platforms: [.iOS])),
+                .linkedLibrary(rustLibOverride ?? "swiftflow_wgpu", .when(platforms: [.iOS])),
                 .linkedLibrary(
-                    "swiftflow_desktop",
+                    rustLibOverride ?? "swiftflow_desktop",
                     .when(platforms: [.macOS, .linux, .windows])
                 ),
                 // -L finds the archive/dylib at link time; the rpath is how the

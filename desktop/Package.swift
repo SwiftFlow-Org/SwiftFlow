@@ -34,6 +34,12 @@ let rustLibDir = ProcessInfo.processInfo.environment["SWIFTFLOW_RUST_LIB_DIR"]
     .flatMap { $0.isEmpty ? nil : $0 }
     ?? "\(packageDir)/../rust/target/\(rustTriple)/release"
 
+// The Rust library to link: SwiftFlow's own, or an app's that depends on it
+// (see SWIFTFLOW_RUST_LIB_NAME in ../Package.swift).
+let rustLibName = ProcessInfo.processInfo.environment["SWIFTFLOW_RUST_LIB_NAME"]
+    .flatMap { $0.isEmpty ? nil : $0 }
+    ?? "swiftflow_desktop"
+
 let package = Package(
     name: "SwiftFlowDesktop",
     platforms: [
@@ -75,7 +81,7 @@ let package = Package(
             linkerSettings: [
                 .unsafeFlags([
                     "-L\(rustLibDir)",
-                    "-lswiftflow_desktop",
+                    "-l\(rustLibName)",
                     "-Xlinker", "-rpath", "-Xlinker", rustLibDir,
                 ])
             ]
