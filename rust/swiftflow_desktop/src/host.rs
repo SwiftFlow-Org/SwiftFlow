@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalPosition;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, Ime, MouseButton, WindowEvent};
+use winit::event::{ElementState, Ime, MouseButton, Touch, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
@@ -33,6 +33,9 @@ pub struct DesktopApp {
 
     cursor: (f32, f32),
     pointer_is_down: bool,
+
+    /// The touch (or Windows pen) driving the pointer, while one is down.
+    touch_id: Option<u64>,
 
     modifiers: ModifiersState,
 
@@ -58,8 +61,59 @@ impl DesktopApp {
             last_frame: None,
             cursor: (0.0, 0.0),
             pointer_is_down: false,
+            touch_id: None,
             modifiers: ModifiersState::empty(),
             cursor_area_seen: 0,
+        }
+    }
+
+    /// A finger on a touchscreen, or on Windows a pen (winit turns Windows
+    /// Ink into touches and holds back the mouse messages that would
+    /// otherwise follow). The first contact drives the pointer; the others
+    /// are ignored until there is a multi-touch path to send them down.
+    fn touch(&mut self, touch: Touch) {
+        let (x, y) = (touch.location.x as f32, touch.location.y as f32);
+
+        #[cfg(target_os = "windows")]
+        match crate::pen::windows::read(touch.id) {
+            Some(sample) => crate::pen::store(sample),
+            None => crate::pen::clear(),
+        }
+
+        match touch.phase {
+            TouchPhase::Started => {
+                if self.touch_id.is_some() || self.pointer_is_down {
+                    return;
+                }
+                self.touch_id = Some(touch.id);
+                self.cursor = (x, y);
+                self.pointer_is_down = true;
+                if let Some(down) = self.callbacks.pointer_down {
+                    down(x, y, self.now());
+                }
+            }
+            TouchPhase::Moved => {
+                // A pen hovering over a Windows tablet sends moves under an
+                // id that never started; those only move the cursor.
+                self.cursor = (x, y);
+                if self.touch_id != Some(touch.id) {
+                    return;
+                }
+                if let Some(moved) = self.callbacks.pointer_moved {
+                    moved(x, y, self.now());
+                }
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                if self.touch_id != Some(touch.id) {
+                    return;
+                }
+                self.touch_id = None;
+                self.cursor = (x, y);
+                self.pointer_is_down = false;
+                if let Some(up) = self.callbacks.pointer_up {
+                    up(x, y, self.now());
+                }
+            }
         }
     }
 
@@ -119,6 +173,9 @@ impl ApplicationHandler for DesktopApp {
         #[cfg(target_os = "macos")]
         crate::macos::set_traffic_light_inset(&window, 20.0, 20.0);
 
+        #[cfg(target_os = "macos")]
+        crate::pen::macos::install();
+
         let size = window.inner_size();
 
         swiftflow_wgpu::init_with_target(
@@ -162,6 +219,8 @@ impl ApplicationHandler for DesktopApp {
                     }
                 }
             }
+
+            WindowEvent::Touch(touch) => self.touch(touch),
 
             WindowEvent::MouseInput {
                 state,

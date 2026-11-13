@@ -2420,12 +2420,14 @@ dependencies = [
 name = "swiftflow_desktop"
 version = "0.1.0"
 dependencies = [
+ "block2 0.6.2",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "rfd",
  "swiftflow_core",
  "swiftflow_wgpu",
+ "windows-sys 0.59.0",
  "winit",
 ]
 

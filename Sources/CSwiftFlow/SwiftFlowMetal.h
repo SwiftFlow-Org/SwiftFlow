@@ -319,6 +319,26 @@ void sf_desktop_open_folder_dialog(void);
 
 const char *sf_desktop_take_picked_folder(void);
 
+typedef enum : uint32_t {
+    SF_PEN_NONE   = 0,
+    SF_PEN_PEN    = 1,
+    SF_PEN_ERASER = 2,
+} SFPenTool;
+
+// The tablet pen as the desktop host last read it (swiftflow_desktop's
+// pen.rs). Tilt and rotation are radians; tilt x leans right, tilt y leans
+// toward the bottom of the screen.
+typedef struct {
+    uint32_t tool;
+    float    pressure;
+    float    tiltX;
+    float    tiltY;
+    float    rotation;
+} SFPenSample;
+
+// Fills `out` and returns 1 while a pen is in range; returns 0 otherwise.
+uint32_t sf_desktop_pen_sample(SFPenSample* out);
+
 typedef struct {
     uint32_t width;
     uint32_t height;

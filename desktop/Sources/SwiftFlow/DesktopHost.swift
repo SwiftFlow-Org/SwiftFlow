@@ -79,8 +79,27 @@ public final class DesktopHost {
         NodeRegistry.shared.clearDirty()
     }
 
+    /// Hands the host's latest tablet reading to `Stylus`, so the pointer
+    /// event about to be routed carries it.
+    private func readPen(t: Double) {
+        var sample = SFPenSample()
+        guard sf_desktop_pen_sample(&sample) != 0 else {
+            Stylus.shared.current = nil
+            return
+        }
+        Stylus.shared.current = StylusSample(
+            tool: sample.tool == SF_PEN_ERASER.rawValue ? .eraser : .pen,
+            pressure: sample.pressure,
+            tiltX: sample.tiltX,
+            tiltY: sample.tiltY,
+            rotation: sample.rotation,
+            timestamp: t
+        )
+    }
+
     @MainActor
     func pointerDown(x: Float, y: Float, t: Double) {
+        readPen(t: t)
         guard var node = cachedNode else { return }
         GestureRouter.shared.pointerDown(
             x: x, y: y, t: t,
@@ -108,11 +127,13 @@ public final class DesktopHost {
 
     @MainActor
     func pointerMoved(x: Float, y: Float, t: Double) {
+        readPen(t: t)
         GestureRouter.shared.pointerMoved(x: x, y: y, t: t)
     }
 
     @MainActor
     func pointerUp(x: Float, y: Float, t: Double) {
+        readPen(t: t)
         GestureRouter.shared.pointerUp(x: x, y: y, t: t)
     }
 
