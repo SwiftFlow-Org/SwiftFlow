@@ -136,6 +136,11 @@ public final class DesktopHost {
     func pointerUp(x: Float, y: Float, t: Double) {
         readPen(t: t)
         GestureRouter.shared.pointerUp(x: x, y: y, t: t)
+        // Hover was held while pressed; catch it up with where the press
+        // ended.
+        if var node = cachedNode {
+            GestureRouter.shared.updateHover(path: NodeBuilder.hitPath(&node, x: x, y: y))
+        }
     }
 
     /// How much ⌘ or Ctrl with the scroll wheel zooms, per point scrolled,

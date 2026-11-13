@@ -121,11 +121,30 @@ public final class GestureRouter {
     /// under it with an `.onPointer` handler, as a `.hover` event.
     public func pointerHover(x: Float, y: Float, t: Double, path: [UInt32]) {
         guard press == nil else { return }
+        updateHover(path: path)
         let scale = DeviceScale.current > 0 ? DeviceScale.current : 1
         guard let node = path.first(where: { PointerRegistry.shared.handlers[$0] != nil }) else {
             return
         }
         firePointer(.hover, on: node, x: x, y: y, t: t, scale: scale)
+    }
+
+    /// The views with `.onHover` the pointer is over.
+    private var hovered: Set<UInt32> = []
+
+    /// Tells `.onHover` views the pointer left or came over them, given the
+    /// views under the pointer now. An empty path is the pointer leaving the
+    /// window.
+    public func updateHover(path: [UInt32]) {
+        let hovers = PointerRegistry.shared.hovers
+        let now = Set(path.filter { hovers[$0] != nil })
+        guard now != hovered else { return }
+        let left = hovered.subtracting(now)
+        let came = now.subtracting(hovered)
+        hovered = now
+        for id in left { hovers[id]?(false) }
+        for id in came { hovers[id]?(true) }
+        NodeRegistry.shared.needsRender = true
     }
 
     /// The innermost view under `path` that takes navigation, if any.

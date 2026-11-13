@@ -61,16 +61,22 @@ final class PointerRegistry {
     /// the same nodes.
     nonisolated(unsafe) var navigators: [UInt32: (NavigationEvent) -> Void] = [:]
 
+    /// `.onHover` handlers, told true when the pointer comes over their view
+    /// and false when it leaves.
+    nonisolated(unsafe) var hovers: [UInt32: (Bool) -> Void] = [:]
+
     func beginBuild() {
         for id in handlers.keys { NodeFrames.shared.register(id) }
         for id in navigators.keys { NodeFrames.shared.register(id) }
         handlers.removeAll(keepingCapacity: true)
         navigators.removeAll(keepingCapacity: true)
+        hovers.removeAll(keepingCapacity: true)
     }
 
     func rekey(from old: UInt32, to new: UInt32) {
         if let handler = handlers.removeValue(forKey: old) { handlers[new] = handler }
         if let handler = navigators.removeValue(forKey: old) { navigators[new] = handler }
+        if let handler = hovers.removeValue(forKey: old) { hovers[new] = handler }
     }
 }
 
@@ -126,7 +132,33 @@ extension PointerModifier {
     }
 }
 
+public struct HoverModifier<Content: View>: View {
+    public typealias Body = Never
+    public var body: Never { fatalError() }
+    let content: Content
+    let action: (Bool) -> Void
+}
+
+extension HoverModifier {
+    public func toSFNode() -> SFNode {
+        var node = content.toSFNode()
+        let id = node.node_id != 0 ? node.node_id : BuildContext.shared.currentID(for: self)
+        node.node_id = id
+        PointerRegistry.shared.hovers[id] = action
+        return node
+    }
+}
+
 extension View {
+    /// Calls `action` with true when the pointer comes over this view and
+    /// false when it leaves, as SwiftUI's `onHover` does. Only hosts that
+    /// track a pointer with nothing pressed send it (the desktop host does).
+    /// Every view on the way down from the window to the pointer counts as
+    /// under it, not only the innermost.
+    public func onHover(perform action: @escaping (Bool) -> Void) -> HoverModifier<Self> {
+        HoverModifier(content: self, action: action)
+    }
+
     /// Receives pan, zoom and rotate requests aimed at this view: trackpad
     /// gestures, the scroll wheel, middle-button drags. A view with this
     /// takes the scroll wheel instead of any scroll view around it.
