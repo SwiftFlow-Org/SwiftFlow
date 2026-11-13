@@ -434,10 +434,9 @@ fn preferred_backends() -> wgpu::Backends {
 
 impl WgpuBackend {
     async fn new(source: Option<SurfaceSource>, width: u32, height: u32) -> Self {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: preferred_backends(),
-            ..Default::default()
-        });
+        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+        descriptor.backends = preferred_backends();
+        let instance = wgpu::Instance::new(descriptor);
 
         let surface = source.map(|source| match source {
             SurfaceSource::Raw(target) => unsafe {
@@ -455,6 +454,7 @@ impl WgpuBackend {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: surface.as_ref(),
                 force_fallback_adapter: false,
+                ..Default::default()
             })
             .await
             .expect(
@@ -464,7 +464,7 @@ impl WgpuBackend {
             );
 
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default(), None)
+            .request_device(&wgpu::DeviceDescriptor::default())
             .await
             .unwrap();
 
@@ -510,6 +510,7 @@ impl WgpuBackend {
             alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
+            color_space: wgpu::SurfaceColorSpace::Auto,
         };
         if let Some(surface) = &surface {
             surface.configure(&device, &config);
@@ -565,8 +566,8 @@ impl WgpuBackend {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rect_pipeline_layout"),
-            bind_group_layouts: &[&globals_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&globals_bgl)],
+            immediate_size: 0,
         });
 
         let instance_attrs = wgpu::vertex_attr_array![
@@ -585,17 +586,17 @@ impl WgpuBackend {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
-                buffers: &[wgpu::VertexBufferLayout {
+                entry_point: Some("vs_main"),
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<RectInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &instance_attrs,
-                }],
+                })],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8Unorm,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -606,7 +607,7 @@ impl WgpuBackend {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -641,8 +642,8 @@ impl WgpuBackend {
         let merged_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("merged_pipeline_layout"),
-                bind_group_layouts: &[&globals_bgl, &merged_bgl],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&globals_bgl), Some(&merged_bgl)],
+                immediate_size: 0,
             });
 
         let merged_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -650,13 +651,13 @@ impl WgpuBackend {
             layout: Some(&merged_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_merged",
+                entry_point: Some("vs_merged"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_merged",
+                entry_point: Some("fs_merged"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8Unorm,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -667,7 +668,7 @@ impl WgpuBackend {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -808,19 +809,19 @@ impl WgpuBackend {
 
         let sample_only_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sample_only_layout"),
-            bind_group_layouts: &[&sample_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&sample_bgl)],
+            immediate_size: 0,
         });
         let blur_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("blur_layout"),
-            bind_group_layouts: &[&sample_bgl, &material_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&sample_bgl), Some(&material_bgl)],
+            immediate_size: 0,
         });
         let material_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("material_pipeline_layout"),
-                bind_group_layouts: &[&globals_bgl, &material_bgl, &glass_bgl],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&globals_bgl), Some(&material_bgl), Some(&glass_bgl)],
+                immediate_size: 0,
             });
 
         let fullscreen_target = |blend: Option<wgpu::BlendState>| {
@@ -836,20 +837,20 @@ impl WgpuBackend {
             layout: Some(&sample_only_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_fullscreen",
+                entry_point: Some("vs_fullscreen"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_halve",
+                entry_point: Some("fs_halve"),
                 targets: &fullscreen_target(None),
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -858,20 +859,20 @@ impl WgpuBackend {
             layout: Some(&blur_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_fullscreen",
+                entry_point: Some("vs_fullscreen"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_blur_h",
+                entry_point: Some("fs_blur_h"),
                 targets: &fullscreen_target(None),
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -880,20 +881,20 @@ impl WgpuBackend {
             layout: Some(&blur_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_fullscreen",
+                entry_point: Some("vs_fullscreen"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_blur_v",
+                entry_point: Some("fs_blur_v"),
                 targets: &fullscreen_target(None),
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -902,13 +903,13 @@ impl WgpuBackend {
             layout: Some(&sample_only_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_fullscreen",
+                entry_point: Some("vs_fullscreen"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_present",
+                entry_point: Some("fs_present"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_format,
                     blend: None,
@@ -919,7 +920,7 @@ impl WgpuBackend {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -963,28 +964,28 @@ impl WgpuBackend {
         let image_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("image_pipeline_layout"),
-                bind_group_layouts: &[&globals_bgl, &image_bgl],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&globals_bgl), Some(&image_bgl)],
+                immediate_size: 0,
             });
         let image_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("image_pipeline"),
             layout: Some(&image_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_image",
+                entry_point: Some("vs_image"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_image",
+                entry_point: Some("fs_image"),
                 targets: &fullscreen_target(Some(wgpu::BlendState::ALPHA_BLENDING)),
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -993,20 +994,20 @@ impl WgpuBackend {
             layout: Some(&material_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_material",
+                entry_point: Some("vs_material"),
                 buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_material",
+                entry_point: Some("fs_material"),
                 targets: &fullscreen_target(Some(wgpu::BlendState::ALPHA_BLENDING)),
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -1247,18 +1248,23 @@ impl WgpuBackend {
             return None; // offscreen: the target is an owned texture, not a swapchain
         }
         let first = self.surface.as_ref().unwrap().get_current_texture();
+        use wgpu::CurrentSurfaceTexture as T;
+        let retry = |backend: &mut Self| match backend.surface.as_ref().unwrap().get_current_texture() {
+            T::Success(frame) | T::Suboptimal(frame) => Some(frame),
+            _ => None,
+        };
         match first {
-            Ok(frame) if !frame.suboptimal => Some(frame),
-            Ok(frame) => {
+            T::Success(frame) => Some(frame),
+            T::Suboptimal(frame) => {
                 drop(frame);
                 self.reconfigure(width, height);
-                self.surface.as_ref().unwrap().get_current_texture().ok()
+                retry(self)
             }
-            Err(wgpu::SurfaceError::Outdated) | Err(wgpu::SurfaceError::Lost) => {
+            T::Outdated | T::Lost => {
                 self.reconfigure(width, height);
-                self.surface.as_ref().unwrap().get_current_texture().ok()
+                retry(self)
             }
-            Err(_) => None,
+            _ => None,
         }
     }
 
@@ -1272,15 +1278,15 @@ impl WgpuBackend {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         encoder.copy_texture_to_buffer(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &off.output_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            wgpu::ImageCopyBuffer {
+            wgpu::TexelCopyBufferInfo {
                 buffer: &off.buffer,
-                layout: wgpu::ImageDataLayout {
+                layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(padded),
                     rows_per_image: Some(height),
@@ -1293,9 +1299,9 @@ impl WgpuBackend {
         let off = self.offscreen.as_mut().unwrap();
         let slice = off.buffer.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
-        self.device.poll(wgpu::Maintain::Wait);
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         {
-            let data = slice.get_mapped_range();
+            let data = slice.get_mapped_range().expect("offscreen readback range");
             let row = (width * 4) as usize;
             off.pixels.clear();
             off.pixels.reserve(row * height as usize);
@@ -1541,6 +1547,7 @@ impl SFBackend for WgpuBackend {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.scene_view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                         store: wgpu::StoreOp::Store,
@@ -1581,6 +1588,7 @@ impl SFBackend for WgpuBackend {
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                             view: &self.scene_view,
                             resolve_target: None,
+                    depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
                                 store: wgpu::StoreOp::Store,
@@ -1655,6 +1663,7 @@ impl SFBackend for WgpuBackend {
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                 view: dst,
                                 resolve_target: None,
+                    depth_slice: None,
                                 ops: wgpu::Operations {
                                     load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                                     store: wgpu::StoreOp::Store,
@@ -1674,6 +1683,7 @@ impl SFBackend for WgpuBackend {
                                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                     view: &self.blur_b_view,
                                     resolve_target: None,
+                    depth_slice: None,
                                     ops: wgpu::Operations {
                                         load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                                         store: wgpu::StoreOp::Store,
@@ -1693,6 +1703,7 @@ impl SFBackend for WgpuBackend {
                                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                     view: &self.blur_a_view,
                                     resolve_target: None,
+                    depth_slice: None,
                                     ops: wgpu::Operations {
                                         load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                                         store: wgpu::StoreOp::Store,
@@ -1712,6 +1723,7 @@ impl SFBackend for WgpuBackend {
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                             view: &self.scene_view,
                             resolve_target: None,
+                    depth_slice: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Load,
                                 store: wgpu::StoreOp::Store,
@@ -1734,6 +1746,7 @@ impl SFBackend for WgpuBackend {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                         store: wgpu::StoreOp::Store,
@@ -1748,7 +1761,7 @@ impl SFBackend for WgpuBackend {
 
         self.queue.submit([encoder.finish()]);
         match surface_frame {
-            Some(frame) => frame.present(),
+            Some(frame) => self.queue.present(frame),
             None => self.read_back(),
         }
     }
@@ -1806,14 +1819,14 @@ impl WgpuBackend {
         if let Some(existing) = self.image_textures.get(&image_id) {
             if existing.width == width && existing.height == height && existing.format == format {
                 self.queue.write_texture(
-                    wgpu::ImageCopyTexture {
+                    wgpu::TexelCopyTextureInfo {
                         texture: &existing.texture,
                         mip_level: 0,
                         origin: wgpu::Origin3d::ZERO,
                         aspect: wgpu::TextureAspect::All,
                     },
                     bytes,
-                    wgpu::ImageDataLayout {
+                    wgpu::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(width * 4),
                         rows_per_image: Some(height),
@@ -1835,14 +1848,14 @@ impl WgpuBackend {
             view_formats: &[],
         });
         self.queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             bytes,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(width * 4),
                 rows_per_image: Some(height),
