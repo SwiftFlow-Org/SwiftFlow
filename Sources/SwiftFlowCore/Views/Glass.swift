@@ -83,7 +83,8 @@ extension GlassEffectModifier {
         backdrop.blurRadius = glass.blurRadius * DeviceScale.current
 
         backdrop.glassRefraction = glass.refraction * DeviceScale.current
-        backdrop.glassInteractive = pressAmount(fg)
+        let press = pressState(fg)
+        backdrop.glassInteractive = press.amount
         backdrop.glassClarity = glass.clarity
 
 
@@ -101,6 +102,14 @@ extension GlassEffectModifier {
         node.fixedWidth = fg.fixedWidth
         node.fixedHeight = fg.fixedHeight
 
+        // The drag stretch goes on the stack, so the content inside the pane
+        // stretches with the glass rather than sliding about on top of it.
+        let scale = DeviceScale.current
+        node.offsetX += press.offset.x * scale
+        node.offsetY += press.offset.y * scale
+        node.scale.x *= press.scale.x
+        node.scale.y *= press.scale.y
+
         let count = children.count
         FrameArena.shared.storeNodes(&children) { pointer in
             node.children = pointer
@@ -109,13 +118,31 @@ extension GlassEffectModifier {
         return node
     }
 
-    /// How far into its press the pane is, on a spring rather than a switch,
-    /// so the bulge and the brighter rim swell in and settle back out.
-    private func pressAmount(_ content: SFNode) -> Float {
-        guard glass.isInteractive, content.node_id != 0 else { return 0 }
-        let held = NodeRegistry.shared.pressedNodes.contains(content.node_id)
-        return GlassPress.shared.amount(for: content.node_id, held: held)
+    /// How far into its press the pane is, and how far a drag has pulled
+    /// it, all on springs rather than switches, so the bulge swells in, the
+    /// pane follows the finger, and both settle back out.
+    private func pressState(_ content: SFNode) -> GlassPressState {
+        guard glass.isInteractive, content.node_id != 0 else { return .rest }
+        let id = content.node_id
+        let held = NodeRegistry.shared.pressedNodes.contains(id)
+        return GlassPress.shared.state(
+            for: id,
+            held: held,
+            translation: held ? GestureRouter.shared.pressTranslation(for: id) : nil
+        )
     }
+}
+
+/// An interactive pane's press for one frame.
+struct GlassPressState {
+    /// 0 at rest, 1 held; a little past 1 on the spring's way in.
+    var amount: Float
+    /// How far the pane leans toward the finger, in points.
+    var offset: Point
+    /// How far it is stretched along each axis.
+    var scale: Point
+
+    static let rest = GlassPressState(amount: 0, offset: .zero, scale: Point(x: 1, y: 1))
 }
 
 /// The press springs behind interactive glass, one per pane that has been
@@ -126,6 +153,16 @@ extension GlassEffectModifier {
 /// LiquidGlassKit lifts and drops its lens on. The value can run a little
 /// past 1 on the way in; the shader takes that as a slightly deeper bend,
 /// which is the overshoot that makes it read as liquid.
+///
+/// Dragging a held pane pulls it after the finger. The pull is a rubber
+/// band: it grows with the square root of the drag, as LiquidGlassKit's
+/// switch and slider do past their ends, so it gives readily at first and
+/// then resists. The pane leans three quarters of the pull toward the finger
+/// and grows by the whole pull along the drag, losing two thirds of it
+/// across: LiquidGlassKit's slider-track ratios, doubled, because at theirs
+/// a pane the size of a toolbar barely changes shape. Let go and the pull
+/// springs back on an underdamped spring, so the pane overshoots its rest
+/// once and wobbles in.
 final class GlassPress {
     nonisolated(unsafe) static let shared = GlassPress()
 
@@ -134,8 +171,18 @@ final class GlassPress {
         var velocity: Float = 0
         var held = false
 
+        /// The finger's travel as the pane has caught up with it, in points.
+        var drag = Point.zero
+        var dragVelocity = Point.zero
+        var dragTarget = Point.zero
+
+        /// The pane's size when the press began. Read once, because the
+        /// stretch would otherwise measure itself.
+        var size: Point?
+
         var isSettled: Bool {
             velocity == 0 && value == (held ? 1 : 0)
+                && dragVelocity == .zero && drag == dragTarget
         }
     }
 
@@ -145,17 +192,29 @@ final class GlassPress {
         springs.values.contains { !$0.isSettled }
     }
 
-    /// Reads the pane's press for this frame and aims its spring at whether
-    /// it is held now.
-    func amount(for id: UInt32, held: Bool) -> Float {
+    /// Whether `id` has a spring, so a finger moving on it needs frames.
+    func tracks(_ id: UInt32) -> Bool {
+        springs[id] != nil
+    }
+
+    /// Reads the pane's press for this frame and aims its springs at whether
+    /// it is held now and where the finger has got to.
+    func state(for id: UInt32, held: Bool, translation: Point?) -> GlassPressState {
         var spring = springs[id] ?? Spring()
-        if !held && spring.value == 0 && spring.velocity == 0 {
+        if !held && spring.value == 0 && spring.velocity == 0
+            && spring.drag == .zero && spring.dragVelocity == .zero {
             springs[id] = nil
-            return 0
+            return .rest
+        }
+        if held && spring.size == nil,
+           let frame = NodeFrames.shared.frame(for: id)?.inPoints(),
+           frame.width > 0, frame.height > 0 {
+            spring.size = Point(x: frame.width, y: frame.height)
         }
         spring.held = held
+        spring.dragTarget = held ? (translation ?? .zero) : .zero
         springs[id] = spring
-        return max(spring.value, 0)
+        return Self.geometry(of: spring)
     }
 
     func step(dt: Float) {
@@ -166,8 +225,7 @@ final class GlassPress {
                 : (GlassMotion.releaseResponse, GlassMotion.releaseDamping)
             let (x, v) = scalarSpringStep(
                 x0: spring.value - target, v0: spring.velocity,
-                omega: (2 * Float.pi) / max(response, 0.01),
-                zeta: damping, dt: dt
+                omega: omega(response), zeta: damping, dt: dt
             )
             spring.value = target + x
             spring.velocity = v
@@ -175,8 +233,60 @@ final class GlassPress {
                 spring.value = target
                 spring.velocity = 0
             }
+
+            // Held, the pane keeps close behind the finger; let go, it
+            // springs home loosely enough to overshoot.
+            let (dragResponse, dragDamping) = spring.held
+                ? (GlassMotion.followResponse, GlassMotion.followDamping)
+                : (GlassMotion.snapBackResponse, GlassMotion.snapBackDamping)
+            let (dx, vx) = scalarSpringStep(
+                x0: spring.drag.x - spring.dragTarget.x, v0: spring.dragVelocity.x,
+                omega: omega(dragResponse), zeta: dragDamping, dt: dt
+            )
+            let (dy, vy) = scalarSpringStep(
+                x0: spring.drag.y - spring.dragTarget.y, v0: spring.dragVelocity.y,
+                omega: omega(dragResponse), zeta: dragDamping, dt: dt
+            )
+            spring.drag = Point(x: spring.dragTarget.x + dx, y: spring.dragTarget.y + dy)
+            spring.dragVelocity = Point(x: vx, y: vy)
+            if abs(dx) < 0.05 && abs(dy) < 0.05 && abs(vx) < 0.5 && abs(vy) < 0.5 {
+                spring.drag = spring.dragTarget
+                spring.dragVelocity = .zero
+            }
             springs[id] = spring
         }
+    }
+
+    private func omega(_ response: Float) -> Float {
+        (2 * Float.pi) / max(response, 0.01)
+    }
+
+    /// The lean and stretch a pull of `drag` points gives a pane.
+    private static func geometry(of spring: Spring) -> GlassPressState {
+        let pull = Point(x: rubberBand(spring.drag.x), y: rubberBand(spring.drag.y))
+        var scale = Point(x: 1, y: 1)
+        if let size = spring.size {
+            let along = Point(x: abs(pull.x), y: abs(pull.y))
+            let width = size.x + along.x * GlassMotion.dragGrowth - along.y * GlassMotion.dragThinning
+            let height = size.y + along.y * GlassMotion.dragGrowth - along.x * GlassMotion.dragThinning
+            scale = Point(
+                x: max(width / size.x, GlassMotion.minimumDragScale),
+                y: max(height / size.y, GlassMotion.minimumDragScale)
+            )
+        }
+        return GlassPressState(
+            amount: max(spring.value, 0),
+            offset: Point(x: pull.x * GlassMotion.dragLean, y: pull.y * GlassMotion.dragLean),
+            scale: scale
+        )
+    }
+
+    /// LiquidGlassKit's square-root rubber band, eased through zero so a
+    /// pane springing back across its rest has no corner in its motion.
+    private static func rubberBand(_ travel: Float) -> Float {
+        let reach = GlassMotion.dragReach
+        let magnitude = reach * ((abs(travel) + 1).squareRoot() - 1)
+        return travel < 0 ? -magnitude : magnitude
     }
 }
 
@@ -186,6 +296,29 @@ enum GlassMotion {
     static let pressDamping: Float = 0.7
     static let releaseResponse: Float = 0.5
     static let releaseDamping: Float = 0.8
+
+    /// How tightly a held pane follows the finger. Touch events arrive in
+    /// steps; this smooths them without reading as lag.
+    static let followResponse: Float = 0.12
+    static let followDamping: Float = 0.9
+
+    /// The spring a pane comes home on when let go: loose enough to swing
+    /// past rest once.
+    static let snapBackResponse: Float = 0.45
+    static let snapBackDamping: Float = 0.45
+
+    /// Points of pull per square-root point of drag: a 25pt drag pulls
+    /// about 5pt, 100pt about 12pt.
+    static let dragReach: Float = 1.25
+
+    /// Of the pull, how much moves the pane and how much stretches it along
+    /// the drag and thins it across.
+    static let dragLean: Float = 0.75
+    static let dragGrowth: Float = 1.0
+    static let dragThinning: Float = 2.0 / 3.0
+
+    /// The narrowest a pane gets across a long drag.
+    static let minimumDragScale: Float = 0.7
 
     /// The lift a held bar takes, as an `Animation`.
     static let lift = Animation.spring(

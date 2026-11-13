@@ -173,7 +173,24 @@ public final class GestureRouter {
             firePointer(.moved, on: press.pointerNode, x: x, y: y, scale: scale)
         }
 
+        // Interactive glass follows the finger while it is held, so its
+        // frames have to keep coming as the finger moves.
+        if press.tapNode != 0, GlassPress.shared.tracks(press.tapNode) {
+            NodeRegistry.shared.needsRender = true
+        }
+
         self.press = press
+    }
+
+    /// How far the finger holding `node` down has moved since it landed, in
+    /// points, or `nil` if nothing is holding it.
+    public func pressTranslation(for node: UInt32) -> Point? {
+        guard let press, press.tapNode == node, node != 0 else { return nil }
+        let scale = DeviceScale.current > 0 ? DeviceScale.current : 1
+        return Point(
+            x: (press.lastX - press.startX) / scale,
+            y: (press.lastY - press.startY) / scale
+        )
     }
 
     /// Whether a scroll under the finger can move the way the finger is going.

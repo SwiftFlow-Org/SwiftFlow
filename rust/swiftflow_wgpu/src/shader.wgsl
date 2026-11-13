@@ -643,6 +643,10 @@ fn fs_material(in: MaterialVSOut) -> @location(0) vec4<f32> {
         corner_radius = min(half.x, half.y);
         corner_n = 2.0;
     }
+    // A pane squashed by a drag can come out shorter than its radius was
+    // meant for. Past half the short side the rounded-rect distance folds
+    // over itself, so hold the radius there.
+    corner_radius = min(corner_radius, min(half.x, half.y));
     let border_width = inst.params.y;
     let specular      = inst.params.w;
 
