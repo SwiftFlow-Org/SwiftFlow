@@ -31,6 +31,9 @@ public final class TextInput {
 
     nonisolated(unsafe) public private(set) var focused: UInt32?
 
+    /// Whether a text field has keyboard focus.
+    public var hasFocus: Bool { focused != nil }
+
     nonisolated(unsafe) public private(set) var preedit: Preedit?
 
     nonisolated(unsafe) private var handlers: [UInt32: TextInputHandlers] = [:]

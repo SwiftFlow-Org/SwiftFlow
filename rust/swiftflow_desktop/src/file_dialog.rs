@@ -40,3 +40,42 @@ pub fn take_picked() -> *const c_char {
     *returned = Some(value);
     returned.as_ref().map_or(std::ptr::null(), |c| c.as_ptr())
 }
+
+// ── Files ───────────────────────────────────────────────────────────────
+
+/// File extensions a requested file chooser offers, while one is wanted.
+static FILE_REQUEST: Mutex<Option<Vec<String>>> = Mutex::new(None);
+static PICKED_FILE: Mutex<Option<CString>> = Mutex::new(None);
+static RETURNED_FILE: Mutex<Option<CString>> = Mutex::new(None);
+
+/// Asks for a file chooser offering files with these extensions (no dots;
+/// empty for any file). Run by the event loop, like the folder chooser.
+pub fn request_open_file(extensions: Vec<String>) {
+    if let Ok(mut slot) = FILE_REQUEST.lock() {
+        *slot = Some(extensions);
+    }
+}
+
+pub fn take_file_request() -> Option<Vec<String>> {
+    FILE_REQUEST.lock().ok().and_then(|mut slot| slot.take())
+}
+
+pub fn store_picked_file(path: Option<String>) {
+    let value = path.and_then(|p| CString::new(p).ok());
+    if let Ok(mut slot) = PICKED_FILE.lock() {
+        *slot = value;
+    }
+}
+
+/// Null until a file is chosen, then the path exactly once.
+pub fn take_picked_file() -> *const c_char {
+    let picked = PICKED_FILE.lock().ok().and_then(|mut slot| slot.take());
+    let Some(value) = picked else {
+        return std::ptr::null();
+    };
+    let Ok(mut returned) = RETURNED_FILE.lock() else {
+        return std::ptr::null();
+    };
+    *returned = Some(value);
+    returned.as_ref().map_or(std::ptr::null(), |c| c.as_ptr())
+}

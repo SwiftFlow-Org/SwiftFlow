@@ -6,7 +6,15 @@ use crate::input::{
 use crate::text_input;
 use crate::{SFDesktopCallbacks, SFDesktopSurfaceInfo};
 use std::ffi::CString;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+
+/// The modifier keys held, as `SF_MOD_*` bits, for `sf_desktop_modifiers`.
+static MODIFIERS: AtomicU32 = AtomicU32::new(0);
+
+pub fn current_modifiers() -> u32 {
+    MODIFIERS.load(Ordering::Relaxed)
+}
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalPosition;
@@ -37,6 +45,9 @@ pub struct DesktopApp {
     /// The touch (or Windows pen) driving the pointer, while one is down.
     touch_id: Option<u64>,
 
+    /// Whether the middle button is down, panning.
+    middle_is_down: bool,
+
     modifiers: ModifiersState,
 
     cursor_area_seen: u32,
@@ -62,6 +73,7 @@ impl DesktopApp {
             cursor: (0.0, 0.0),
             pointer_is_down: false,
             touch_id: None,
+            middle_is_down: false,
             modifiers: ModifiersState::empty(),
             cursor_area_seen: 0,
         }
@@ -114,6 +126,12 @@ impl DesktopApp {
                     up(x, y, self.now());
                 }
             }
+        }
+    }
+
+    fn navigate(&self, kind: u32, a: f32, b: f32) {
+        if let Some(navigate) = self.callbacks.navigate {
+            navigate(kind, self.cursor.0, self.cursor.1, a, b);
         }
     }
 
@@ -211,12 +229,48 @@ impl ApplicationHandler for DesktopApp {
             }
 
             WindowEvent::CursorMoved { position, .. } => {
+                let previous = self.cursor;
                 self.cursor = (position.x as f32, position.y as f32);
 
-                if self.pointer_is_down {
+                if self.middle_is_down {
+                    self.navigate(
+                        crate::SF_NAVIGATE_PAN,
+                        self.cursor.0 - previous.0,
+                        self.cursor.1 - previous.1,
+                    );
+                } else if self.pointer_is_down {
                     if let Some(moved) = self.callbacks.pointer_moved {
                         moved(self.cursor.0, self.cursor.1, self.now());
                     }
+                } else if let Some(hover) = self.callbacks.hover {
+                    hover(self.cursor.0, self.cursor.1, self.now());
+                }
+            }
+
+            WindowEvent::MouseInput { state, button: MouseButton::Middle, .. } => {
+                self.middle_is_down = state == ElementState::Pressed;
+                if !self.middle_is_down {
+                    self.navigate(crate::SF_NAVIGATE_END, 0.0, 0.0);
+                }
+            }
+
+            WindowEvent::PinchGesture { delta, phase, .. } => {
+                if delta.is_finite() {
+                    self.navigate(crate::SF_NAVIGATE_MAGNIFY, delta as f32, 0.0);
+                }
+                if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+                    self.navigate(crate::SF_NAVIGATE_END, 0.0, 0.0);
+                }
+            }
+
+            WindowEvent::RotationGesture { delta, phase, .. } => {
+                // winit gives degrees, counterclockwise; navigation turns
+                // clockwise in radians, the way the screen's y runs down.
+                if delta.is_finite() {
+                    self.navigate(crate::SF_NAVIGATE_ROTATE, -delta.to_radians(), 0.0);
+                }
+                if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+                    self.navigate(crate::SF_NAVIGATE_END, 0.0, 0.0);
                 }
             }
 
@@ -280,6 +334,7 @@ impl ApplicationHandler for DesktopApp {
 
             WindowEvent::ModifiersChanged(new) => {
                 self.modifiers = new.state();
+                MODIFIERS.store(text_input::modifier_mask(self.modifiers), Ordering::Relaxed);
             }
 
             WindowEvent::KeyboardInput { event, .. } => {
@@ -369,6 +424,14 @@ impl ApplicationHandler for DesktopApp {
                     .pick_folder()
                     .map(|path| path.to_string_lossy().into_owned());
                 file_dialog::store_picked(picked);
+            }
+            if let Some(extensions) = file_dialog::take_file_request() {
+                let mut dialog = rfd::FileDialog::new().set_title("Open");
+                if !extensions.is_empty() {
+                    dialog = dialog.add_filter("Documents", &extensions);
+                }
+                let picked = dialog.pick_file().map(|path| path.to_string_lossy().into_owned());
+                file_dialog::store_picked_file(picked);
             }
             window.request_redraw();
         }

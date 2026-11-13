@@ -121,3 +121,43 @@ fn a_short_buffer_keeps_the_deepest_ids() {
     assert_eq!(n, 2);
     assert_eq!(buf, [4, 3]);
 }
+
+#[test]
+fn an_empty_overlay_stack_lets_presses_through_to_what_is_under_it() {
+    const CANVAS: u32 = 10;
+    const OVERLAY: u32 = 20;
+    const PANEL: u32 = 21;
+
+    // A full-size stack in front holding one small panel, over a full-size
+    // canvas: the layout of a floating panel over a drawing.
+    let mut canvas = rect(CANVAS, 0.0, 0.0);
+    canvas.set_sizing(SFSizing::Fill);
+    let mut overlay = stack(SFAxis::Depth, OVERLAY, vec![rect(PANEL, 100.0, 100.0)]);
+    overlay.set_sizing(SFSizing::Fill);
+    let mut root = stack(SFAxis::Depth, 1, vec![canvas, overlay]);
+    root.set_sizing(SFSizing::Fill);
+    layout(&mut root, VIEWPORT);
+
+    let away = path_at(&root, 380.0, 780.0);
+    assert!(away.contains(&CANVAS), "the canvas should get a press beside the panel: {away:?}");
+    assert!(!away.contains(&OVERLAY), "the overlay has nothing there: {away:?}");
+
+    let on_panel = path_at(&root, 200.0, 400.0);
+    assert!(on_panel.contains(&PANEL), "the panel itself still catches: {on_panel:?}");
+    assert!(!on_panel.contains(&CANVAS), "and covers what is under it: {on_panel:?}");
+}
+
+#[test]
+fn a_stack_with_a_fill_still_catches_between_its_children() {
+    let mut filled = stack(SFAxis::Depth, 30, vec![rect(31, 10.0, 10.0)]);
+    filled.set_sizing(SFSizing::Fill);
+    filled.fill = SFColor { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
+    let mut under = rect(32, 0.0, 0.0);
+    under.set_sizing(SFSizing::Fill);
+    let mut root = stack(SFAxis::Depth, 1, vec![under, filled]);
+    root.set_sizing(SFSizing::Fill);
+    layout(&mut root, VIEWPORT);
+
+    let path = path_at(&root, 380.0, 780.0);
+    assert!(path.contains(&30) && !path.contains(&32), "{path:?}");
+}

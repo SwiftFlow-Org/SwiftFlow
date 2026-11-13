@@ -38,6 +38,7 @@ public final class DesktopHost {
         MainQueue.drain()
         ImageLoader.shared.drainPending()
         FolderPicker.shared.drainPending()
+        FilePicker.shared.drainPending()
 
         let anyScrollActive = NodeRegistry.shared.scrollStates.values.contains {
             $0.isDragging || $0.isSettling
@@ -137,14 +138,72 @@ public final class DesktopHost {
         GestureRouter.shared.pointerUp(x: x, y: y, t: t)
     }
 
+    /// How much ⌘ or Ctrl with the scroll wheel zooms, per point scrolled,
+    /// as a power of e.
+    static let zoomPerPoint = 0.0035
+
+    /// The view a navigation gesture in progress belongs to.
+    private var navigating: UInt32?
+
     @MainActor
     func scroll(x: Float, y: Float, dx: Float, dy: Float, phase: UInt32) {
         _ = phase
         guard var node = cachedNode else { return }
+
+        // A view that navigates takes the wheel: ⌘ or Ctrl with it zooms,
+        // anything else pans. The content follows the fingers, so it moves
+        // against the scroll offset's direction.
+        let router = GestureRouter.shared
+        if let target = router.navigator(on: NodeBuilder.hitPath(&node, x: x, y: y)) {
+            let scale = surface.scale > 0 ? surface.scale : 1
+            let mods = KeyModifiers(rawValue: sf_desktop_modifiers())
+            if mods.contains(.command) || mods.contains(.control) {
+                // A wheel notch is several dozen points; this makes one
+                // about 15%, and a trackpad's small steps smooth.
+                let factor = Float(exp(Double(-dy / scale) * Self.zoomPerPoint))
+                router.navigate(.zoom(factor: factor, anchor: router.localPoint(x: x, y: y, in: target)), on: target)
+            } else {
+                router.navigate(.pan(dx: -dx / scale, dy: -dy / scale), on: target)
+            }
+            return
+        }
+
         GestureRouter.shared.wheel(
             x: x, y: y, dx: dx, dy: dy,
             scrolls: NodeBuilder.scrollPath(&node, x: x, y: y)
         )
+    }
+
+    @MainActor
+    func navigate(kind: UInt32, x: Float, y: Float, a: Float, b: Float) {
+        let router = GestureRouter.shared
+        if kind == SF_NAVIGATE_END.rawValue {
+            if let target = navigating { router.navigate(.end, on: target) }
+            navigating = nil
+            return
+        }
+        if navigating == nil, var node = cachedNode {
+            navigating = router.navigator(on: NodeBuilder.hitPath(&node, x: x, y: y))
+        }
+        guard let target = navigating else { return }
+        let scale = surface.scale > 0 ? surface.scale : 1
+        let anchor = router.localPoint(x: x, y: y, in: target)
+        switch kind {
+        case SF_NAVIGATE_MAGNIFY.rawValue:
+            router.navigate(.zoom(factor: max(0.05, 1 + a), anchor: anchor), on: target)
+        case SF_NAVIGATE_ROTATE.rawValue:
+            router.navigate(.rotate(radians: a, anchor: anchor), on: target)
+        case SF_NAVIGATE_PAN.rawValue:
+            router.navigate(.pan(dx: a / scale, dy: b / scale), on: target)
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    func hover(x: Float, y: Float, t: Double) {
+        guard var node = cachedNode else { return }
+        GestureRouter.shared.pointerHover(x: x, y: y, t: t, path: NodeBuilder.hitPath(&node, x: x, y: y))
     }
 
     @MainActor
@@ -193,7 +252,18 @@ private func onLifecycle(_ event: UInt32) {
 }
 
 private func onKey(_ key: UInt32, _ modifiers: UInt32, _ pressed: UInt32, _ isRepeat: UInt32) {
-    TextInput.shared.key(key, modifiers: modifiers, pressed: pressed != 0, isRepeat: isRepeat != 0)
+    let taken = TextInput.shared.key(key, modifiers: modifiers, pressed: pressed != 0, isRepeat: isRepeat != 0)
+    if !taken {
+        KeyCommands.shared.dispatch(code: key, modifiers: modifiers, pressed: pressed != 0, isRepeat: isRepeat != 0)
+    }
+}
+
+private func onNavigate(_ kind: UInt32, _ x: Float, _ y: Float, _ a: Float, _ b: Float) {
+    MainActor.assumeIsolated { DesktopHost.shared.navigate(kind: kind, x: x, y: y, a: a, b: b) }
+}
+
+private func onHover(_ x: Float, _ y: Float, _ t: Double) {
+    MainActor.assumeIsolated { DesktopHost.shared.hover(x: x, y: y, t: t) }
 }
 
 private func onIMEPreedit(_ text: UnsafePointer<CChar>?, _ begin: Int32, _ end: Int32) {
@@ -290,6 +360,14 @@ extension DesktopHost {
             return String(cString: raw)
         }
 
+        FilePicker.shared.requestOpen = { extensions in
+            extensions.joined(separator: ",").withCString { sf_desktop_open_file_dialog($0) }
+        }
+        FilePicker.shared.takePicked = {
+            guard let raw = sf_desktop_take_picked_file() else { return nil }
+            return String(cString: raw)
+        }
+
         TextInput.shared.setIMEAllowed = { sf_desktop_set_ime_allowed($0 ? 1 : 0) }
         TextInput.shared.setIMECursorArea = { sf_desktop_set_ime_cursor_area($0, $1, $2, $3) }
 
@@ -305,7 +383,9 @@ extension DesktopHost {
             imePreedit: onIMEPreedit,
             imeCommit: onIMECommit,
             imeEnabled: onIMEEnabled,
-            secondaryClick: onSecondaryClick
+            secondaryClick: onSecondaryClick,
+            navigate: onNavigate,
+            hover: onHover
         )
 
         title.withCString { titlePtr in

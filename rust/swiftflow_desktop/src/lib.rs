@@ -56,7 +56,26 @@ pub struct SFDesktopCallbacks {
     pub ime_enabled: Option<extern "C" fn(u32)>,
 
     pub secondary_click: Option<extern "C" fn(f32, f32, f64)>,
+
+    /// A navigation gesture over the window: `(kind, x, y, a, b)` with
+    /// `kind` one of the `SF_NAVIGATE_*` constants. See `host.rs`.
+    pub navigate: Option<extern "C" fn(u32, f32, f32, f32, f32)>,
+
+    /// The pointer moved with no button down: `(x, y, t)`.
+    pub hover: Option<extern "C" fn(f32, f32, f64)>,
 }
+
+/// Navigation gestures, as `SFDesktopCallbacks::navigate` reports them.
+/// Positions and pan distances are physical pixels.
+///
+/// A pinch: `a` is the change in magnification (0.1 is 10% bigger).
+pub const SF_NAVIGATE_MAGNIFY: u32 = 1;
+/// A two-finger twist: `a` is the turn in radians, clockwise.
+pub const SF_NAVIGATE_ROTATE: u32 = 2;
+/// A drag with the middle mouse button: `a`, `b` is how far it moved.
+pub const SF_NAVIGATE_PAN: u32 = 3;
+/// A gesture ended (fingers lifted, middle button released).
+pub const SF_NAVIGATE_END: u32 = 4;
 
 #[no_mangle]
 pub extern "C" fn sf_desktop_set_ime_allowed(allowed: u32) {
@@ -98,6 +117,12 @@ pub extern "C" fn sf_desktop_run(
     }
 }
 
+/// The modifier keys held right now, as `SF_MOD_*` bits.
+#[no_mangle]
+pub extern "C" fn sf_desktop_modifiers() -> u32 {
+    host::current_modifiers()
+}
+
 #[no_mangle]
 pub extern "C" fn sf_desktop_open_folder_dialog() {
     file_dialog::request_open_folder();
@@ -106,4 +131,23 @@ pub extern "C" fn sf_desktop_open_folder_dialog() {
 #[no_mangle]
 pub extern "C" fn sf_desktop_take_picked_folder() -> *const c_char {
     file_dialog::take_picked()
+}
+
+/// Asks for a file chooser. `extensions` is a comma-separated list without
+/// dots ("drm,png"), or empty or null for any file.
+#[no_mangle]
+pub extern "C" fn sf_desktop_open_file_dialog(extensions: *const c_char) {
+    let list = if extensions.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(extensions) }.to_string_lossy().into_owned()
+    };
+    let extensions = list.split(',').map(str::trim).filter(|e| !e.is_empty()).map(String::from).collect();
+    file_dialog::request_open_file(extensions);
+}
+
+/// Null until a file is chosen, then its path exactly once.
+#[no_mangle]
+pub extern "C" fn sf_desktop_take_picked_file() -> *const c_char {
+    file_dialog::take_picked_file()
 }

@@ -14,6 +14,10 @@ public struct PointerEvent {
         case down
         case moved
         case up
+        /// The pointer moved over the view with nothing pressed: a mouse
+        /// passing over, or a pen hovering above a tablet. Only hosts that
+        /// track hover send it (the desktop host does).
+        case hover
     }
 
     public let phase: Phase
@@ -53,13 +57,54 @@ final class PointerRegistry {
 
     nonisolated(unsafe) var handlers: [UInt32: (PointerEvent) -> Void] = [:]
 
+    /// `.onNavigate` handlers, kept here because they live and die with
+    /// the same nodes.
+    nonisolated(unsafe) var navigators: [UInt32: (NavigationEvent) -> Void] = [:]
+
     func beginBuild() {
         for id in handlers.keys { NodeFrames.shared.register(id) }
+        for id in navigators.keys { NodeFrames.shared.register(id) }
         handlers.removeAll(keepingCapacity: true)
+        navigators.removeAll(keepingCapacity: true)
     }
 
     func rekey(from old: UInt32, to new: UInt32) {
         if let handler = handlers.removeValue(forKey: old) { handlers[new] = handler }
+        if let handler = navigators.removeValue(forKey: old) { navigators[new] = handler }
+    }
+}
+
+/// A request to move what a view shows: pan, zoom or turn it. For views
+/// that show something larger than themselves, like a drawing canvas.
+///
+/// The desktop host sends these from a trackpad (two-finger scroll, pinch,
+/// twist), a mouse wheel (⌘ or Ctrl with the wheel zooms) and middle-button
+/// drags. Positions are local to the view, in points.
+public enum NavigationEvent: Sendable {
+    /// Move the content by this much, in points.
+    case pan(dx: Float, dy: Float)
+    /// Scale the content by `factor` about `anchor`.
+    case zoom(factor: Float, anchor: Point)
+    /// Turn the content clockwise by `radians` about `anchor`.
+    case rotate(radians: Float, anchor: Point)
+    /// The gesture that sent the events before this one has ended.
+    case end
+}
+
+public struct NavigateModifier<Content: View>: View {
+    public typealias Body = Never
+    public var body: Never { fatalError() }
+    let content: Content
+    let action: (NavigationEvent) -> Void
+}
+
+extension NavigateModifier {
+    public func toSFNode() -> SFNode {
+        var node = content.toSFNode()
+        let id = node.node_id != 0 ? node.node_id : BuildContext.shared.currentID(for: self)
+        node.node_id = id
+        PointerRegistry.shared.navigators[id] = action
+        return node
     }
 }
 
@@ -82,6 +127,13 @@ extension PointerModifier {
 }
 
 extension View {
+    /// Receives pan, zoom and rotate requests aimed at this view: trackpad
+    /// gestures, the scroll wheel, middle-button drags. A view with this
+    /// takes the scroll wheel instead of any scroll view around it.
+    public func onNavigate(perform action: @escaping (NavigationEvent) -> Void) -> NavigateModifier<Self> {
+        NavigateModifier(content: self, action: action)
+    }
+
     /// Receives the raw pointer stream (down, moves, up) on this view, before
     /// gesture interpretation — the pointer is captured on `down`, so the moves
     /// and up arrive here even if the pointer leaves the view.

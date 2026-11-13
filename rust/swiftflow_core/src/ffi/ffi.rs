@@ -156,6 +156,22 @@ pub extern "C" fn sf_hit_test_path(
     count
 }
 
+/// Whether a node lets the pointer through where none of its children are.
+///
+/// A stack, spacer or empty node with nothing of its own to draw (no fill,
+/// border, blur or glass) only arranges its children, so the space between
+/// them is not part of it, as in SwiftUI. Without this, a full-window
+/// overlay stack (a panel pinned to a corner, a bar along the bottom) would
+/// take every press over the whole window from whatever lies under it.
+/// Everything else, including a rect filled with a clear colour, catches.
+fn passes_through(node: &SFNode) -> bool {
+    matches!(node.kind, SFNodeKind::Stack | SFNodeKind::Spacer | SFNodeKind::Empty)
+        && node.fill.a <= 0.001
+        && node.border.width <= 0.0
+        && node.blur_radius <= 0.0
+        && node.glass_refraction <= 0.0
+}
+
 fn hit_path_node(
     node: &SFNode,
     x: f32,
@@ -181,13 +197,18 @@ fn hit_path_node(
         return false;
     }
 
+    let mut child_hit = false;
     if !node.children.is_null() && node.children_len > 0 {
         let children = unsafe { std::slice::from_raw_parts(node.children, node.children_len) };
         for child in children.iter().rev() {
             if hit_path_node(child, x, y, node_origin, scale, out) {
+                child_hit = true;
                 break;
             }
         }
+    }
+    if !child_hit && passes_through(node) {
+        return false;
     }
 
     if node.node_id != 0 {
@@ -229,6 +250,9 @@ fn hit_test_node(node: &SFNode, x: f32, y: f32, translate: SFPoint, scale: SFSca
                 return Some(id);
             }
         }
+    }
+    if passes_through(node) {
+        return None;
     }
 
     if node.node_id != 0 {

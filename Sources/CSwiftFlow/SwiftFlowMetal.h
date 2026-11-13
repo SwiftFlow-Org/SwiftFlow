@@ -307,7 +307,26 @@ typedef struct {
     void (*imeEnabled)(uint32_t enabled);
 
     void (*secondaryClick)(float x, float y, double t);
+
+    // A navigation gesture: kind is one of SF_NAVIGATE_*, x and y where the
+    // pointer is (pixels). MAGNIFY: a is the change in magnification.
+    // ROTATE: a is radians, clockwise. PAN: a, b is the distance (pixels).
+    void (*navigate)(uint32_t kind, float x, float y, float a, float b);
+
+    // The pointer moved with no button down.
+    void (*hover)(float x, float y, double t);
 } SFDesktopCallbacks;
+
+typedef enum : uint32_t {
+    SF_NAVIGATE_MAGNIFY = 1,
+    SF_NAVIGATE_ROTATE  = 2,
+    SF_NAVIGATE_PAN     = 3,
+    SF_NAVIGATE_END     = 4,
+} SFNavigateKind;
+
+// The modifier keys held right now, as SFKeyModifier bits (shift 1,
+// control 2, alt 4, super 8).
+uint32_t sf_desktop_modifiers(void);
 
 void sf_desktop_run(const SFDesktopConfig* config, const SFDesktopCallbacks* callbacks);
 
@@ -318,6 +337,12 @@ void sf_desktop_set_ime_cursor_area(float x, float y, float width, float height)
 void sf_desktop_open_folder_dialog(void);
 
 const char *sf_desktop_take_picked_folder(void);
+
+// A file chooser: `extensions` is a comma-separated list without dots
+// ("drm,png"), or NULL for any file. The path arrives through
+// sf_desktop_take_picked_file on a later frame, or never if cancelled.
+void sf_desktop_open_file_dialog(const char *extensions);
+const char *sf_desktop_take_picked_file(void);
 
 typedef enum : uint32_t {
     SF_PEN_NONE   = 0,
