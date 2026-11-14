@@ -163,13 +163,22 @@ pub extern "C" fn sf_hit_test_path(
 /// them is not part of it, as in SwiftUI. Without this, a full-window
 /// overlay stack (a panel pinned to a corner, a bar along the bottom) would
 /// take every press over the whole window from whatever lies under it.
-/// Everything else, including a rect filled with a clear colour, catches.
+/// An outline (a stroked shape) passes presses through too. Everything
+/// else, including a rect filled with a clear colour, catches.
 fn passes_through(node: &SFNode) -> bool {
-    matches!(node.kind, SFNodeKind::Stack | SFNodeKind::Spacer | SFNodeKind::Empty)
+    let arranges = matches!(node.kind, SFNodeKind::Stack | SFNodeKind::Spacer | SFNodeKind::Empty)
         && node.fill.a <= 0.001
         && node.border.width <= 0.0
         && node.blur_radius <= 0.0
-        && node.glass_refraction <= 0.0
+        && node.glass_refraction <= 0.0;
+    // An outline (a stroked shape: a rect with a border and nothing inside)
+    // draws a line, not an area, so presses go to what is under it.
+    let outline = node.kind == SFNodeKind::Rect
+        && node.fill.a <= 0.001
+        && node.border.width > 0.0
+        && node.blur_radius <= 0.0
+        && node.glass_refraction <= 0.0;
+    arranges || outline
 }
 
 fn hit_path_node(
@@ -193,7 +202,11 @@ fn hit_path_node(
         && y >= node_origin.y
         && y <= node_origin.y + node_h;
 
-    if !inside {
+    // A child moved with `.offset` can sit outside the stack that holds
+    // it, so an empty, unclipped stack still looks among its children
+    // when the point is outside it. Anything that draws, or clips, keeps
+    // its children to its own frame.
+    if !inside && !(passes_through(node) && node.clip_content == 0.0) {
         return false;
     }
 
@@ -207,7 +220,7 @@ fn hit_path_node(
             }
         }
     }
-    if !child_hit && passes_through(node) {
+    if !child_hit && (passes_through(node) || !inside) {
         return false;
     }
 
@@ -239,7 +252,9 @@ fn hit_test_node(node: &SFNode, x: f32, y: f32, translate: SFPoint, scale: SFSca
         && y >= node_origin.y
         && y <= node_origin.y + node_h;
 
-    if !inside {
+    // See `hit_path_node`: an empty, unclipped stack looks among its
+    // children even when the point is outside it.
+    if !inside && !(passes_through(node) && node.clip_content == 0.0) {
         return None;
     }
 
@@ -251,7 +266,7 @@ fn hit_test_node(node: &SFNode, x: f32, y: f32, translate: SFPoint, scale: SFSca
             }
         }
     }
-    if passes_through(node) {
+    if passes_through(node) || !inside {
         return None;
     }
 
