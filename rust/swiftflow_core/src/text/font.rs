@@ -79,7 +79,10 @@ pub struct GlyphKey {
 fn glyph_cache_key(c: char, font_size: f32, weight: f32, family: SFFontFamily) -> GlyphKey {
     GlyphKey {
         c,
-        size: (font_size / 2.0).round() as u32 * 2,
+        // To a quarter pixel. Rounding to even pixels let 11 and 12 pt text
+        // share glyphs, so whichever came first set the other's advances,
+        // and text measured wider than it is wrapped in a box that fit it.
+        size: (font_size * 4.0).round() as u32,
         weight: weight.round() as u32,
         family,
     }

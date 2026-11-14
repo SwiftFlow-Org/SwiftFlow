@@ -178,6 +178,8 @@ extension GestureModifier {
 
         let id = node.node_id != 0 ? node.node_id : BuildContext.shared.currentID(for: self)
         node.node_id = id
+        // A gesture takes presses anywhere in the view's frame.
+        node.catchesPresses = 1
         attach(id)
         return node
     }

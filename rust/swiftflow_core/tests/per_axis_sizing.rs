@@ -287,7 +287,7 @@ fn a_stack_that_hugs_only_the_height_measures_a_width_filling_child() {
 }
 
 #[test]
-fn a_stack_that_hugs_both_axes_cannot_measure_a_width_filling_child() {
+fn a_stack_that_hugs_both_axes_measures_its_only_child_against_the_room() {
     let mut stack = SFNode::empty();
     stack.kind = SFNodeKind::Stack;
     stack.axis = SFAxis::Depth;
@@ -298,12 +298,9 @@ fn a_stack_that_hugs_both_axes_cannot_measure_a_width_filling_child() {
 
     layout(&mut stack, VIEWPORT);
 
-    assert_eq!(
-        (stack.frame.width, stack.frame.height),
-        (0.0, 0.0),
-        "the only child fills an axis this stack hugs, so it waits for a \
-         hug that has nothing else to measure and both axes come out empty"
-    );
+    // Nothing else to measure by, so the child is laid out against the
+    // room: it fills the width and states its height.
+    assert_eq!((stack.frame.width, stack.frame.height), (400.0, 44.0));
 }
 
 #[test]

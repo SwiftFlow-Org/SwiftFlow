@@ -216,9 +216,15 @@ fn layout_stack(node: &mut SFNode, available: SFRect) {
             // one of them. Would need to lay the child out twice, and Text/Icon add
             // their padding to the frame they already have, so a second pass doubles
             // it. Make those idempotent first.
-            let defers = |c: &SFNode| {
+            let waits = |c: &SFNode| {
                 (hugs_x && c.sizing_x == SFSizing::Fill) || (hugs_y && c.sizing_y == SFSizing::Fill)
             };
+            // When every child would wait for the stack's size, there is
+            // nothing to measure it by: they are laid out against the room
+            // instead, and measured, so a child that fills one axis and
+            // states the other still gives the stack its stated size.
+            let all_wait = children.iter().all(|c| waits(c));
+            let defers = |c: &SFNode| !all_wait && waits(c);
 
             for child in children.iter_mut() {
                 if !defers(child) {
@@ -399,9 +405,12 @@ fn layout_children_linear(
     for child in children.iter_mut() {
         if child.kind == SFNodeKind::Spacer {
             let size = share_of(child).max(child.min_length);
+            // A spacer takes room along the stack only. Across it, it has
+            // no extent, or a row with a spacer would hug the full height
+            // it was offered (and a column the full width).
             child.frame = match axis {
-                SFAxis::Vertical => SFRect::new(available.x, cursor, available.width, size),
-                SFAxis::Horizontal => SFRect::new(cursor, available.y, size, available.height),
+                SFAxis::Vertical => SFRect::new(available.x, cursor, 0.0, size),
+                SFAxis::Horizontal => SFRect::new(cursor, available.y, size, 0.0),
                 SFAxis::Depth => unreachable!(),
             };
             cursor += size + spacing;

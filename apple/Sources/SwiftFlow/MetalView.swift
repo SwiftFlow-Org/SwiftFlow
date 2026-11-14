@@ -185,6 +185,9 @@ final class MetalView: UIView {
 
         FrameArena.shared.reset()
         NodeFrames.shared.beginFrame()
+        // Cleared before the build, not after: whatever the build or the
+        // frames recorded below mark dirty gets the next frame.
+        NodeRegistry.shared.clearDirty()
         var node = NodeBuilder.build(rootView)
         sf_render_tree(&node, width, height, scale)
 
@@ -200,7 +203,6 @@ final class MetalView: UIView {
         }
 
         cachedNode = node
-        NodeRegistry.shared.clearDirty()
     }
 
     private func stepScrollPhysics(dt: Float) {

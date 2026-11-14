@@ -35,6 +35,8 @@ extension Button {
 
         var node     = style.makeBody(configuration: config).toSFNode()
         node.node_id = id
+        // Pressable across its whole label, gaps included.
+        node.catchesPresses = 1
 
         NodeRegistry.shared.registerTap(id, action: action)
         return node

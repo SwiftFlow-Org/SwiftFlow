@@ -135,6 +135,10 @@ pub struct SFNode {
     pub tail_offset: f32,
     pub tail_length: f32,
 
+    /// Non-zero: presses anywhere in the frame land on this node, as on a
+    /// button, even where nothing is drawn.
+    pub catches_presses: f32,
+
     pub text: *const u8,
     pub text_len: usize,
     pub font_size: f32,
@@ -218,6 +222,7 @@ impl SFNode {
             glass_clarity: 0.0,
             tail_offset: 0.0,
             tail_length: 0.0,
+            catches_presses: 0.0,
             text: std::ptr::null(),
             text_len: 0,
             font_size: 16.0,

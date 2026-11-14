@@ -124,6 +124,11 @@ typedef struct SFNode {
     float         tailOffset;
     float         tailLength;
 
+    // Non-zero: presses anywhere in the frame land here, as on a button or
+    // a view with a tap or pointer handler, even where nothing is drawn.
+    // A stack that draws nothing otherwise lets them through.
+    float         catchesPresses;
+
     const uint8_t* text;
     size_t         textLen;
     float          fontSize;
@@ -216,6 +221,10 @@ typedef struct {
 SFScrollMetrics sf_get_scroll_metrics(const SFNode* root, uint32_t scroll_id);
 
 SFRect sf_get_node_frame(const SFNode* root, uint32_t node_id);
+// Lays a tree out without drawing it, and prints a laid-out tree to
+// standard error: for tests and tools that check layout.
+void sf_layout_tree(SFNode* root, float width, float height, float scale);
+void sf_debug_print_tree(const SFNode* root);
 
 typedef struct {
     float width;

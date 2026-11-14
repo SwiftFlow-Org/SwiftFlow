@@ -62,6 +62,9 @@ public final class DesktopHost {
 
         FrameArena.shared.reset()
         NodeFrames.shared.beginFrame()
+        // Cleared before the build, not after: whatever the build or the
+        // frames recorded below mark dirty gets the next frame.
+        NodeRegistry.shared.clearDirty()
         var node = NodeBuilder.build(rootView)
         sf_render_tree(&node, Float(surface.width), Float(surface.height), surface.scale)
 
@@ -77,7 +80,6 @@ public final class DesktopHost {
         }
 
         cachedNode = node
-        NodeRegistry.shared.clearDirty()
     }
 
     /// Hands the host's latest tablet reading to `Stylus`, so the pointer

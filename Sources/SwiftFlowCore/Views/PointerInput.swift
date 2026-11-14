@@ -127,6 +127,7 @@ extension PointerModifier {
 
         let id = node.node_id != 0 ? node.node_id : BuildContext.shared.currentID(for: self)
         node.node_id = id
+        node.catchesPresses = 1
         PointerRegistry.shared.handlers[id] = action
         return node
     }

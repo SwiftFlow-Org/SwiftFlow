@@ -1,3 +1,4 @@
+import Foundation
 import CSwiftFlow
 
 public enum NodeBuilder {
@@ -59,6 +60,27 @@ public enum NodeBuilder {
         TransitionRegistry.shared.observe(node)
         applyAmbientAnimation(to: &node)
         return node
+    }
+
+    /// Runs `build` in one place of the build's numbering: the views it
+    /// builds are numbered under that place, and the views after it keep
+    /// their numbers however many it built.
+    @discardableResult
+    static func inOnePlace<T>(_ build: () -> T) -> T {
+        BuildContext.shared.push()
+        let out = build()
+        BuildContext.shared.pop()
+        BuildContext.shared.advance()
+        return out
+    }
+
+    /// Builds `view` with `identity` as its node's id, whatever id it
+    /// would have taken.
+    static func buildAny(_ view: any View, identity: UInt32) -> SFNode {
+        func open<V: View>(_ v: V) -> SFNode {
+            buildAny(IdentifiedContent(content: v, identity: identity))
+        }
+        return open(view)
     }
 
     private static func applyAmbientAnimation(to node: inout SFNode) {

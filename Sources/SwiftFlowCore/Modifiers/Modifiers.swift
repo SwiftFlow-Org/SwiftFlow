@@ -395,7 +395,7 @@ public struct BackgroundShapeModifier<Content: View, Background: View>: View {
 extension BackgroundShapeModifier {
     public func toSFNode() -> SFNode {
 
-        let bg = background.toSFNode()
+        let bg = decorationLayer(background.toSFNode(), alignment: .center)
         let fg = content.toSFNode()
 
         var children = [bg, fg]
@@ -425,6 +425,26 @@ extension View {
     }
 }
 
+/// `decoration` (a background or overlay) in a layer that fills whatever
+/// it decorates: a hugging stack measures its content first and lays fill
+/// out against that, so the decoration never makes the view bigger, however
+/// big it is or however it is sized. It is placed in the layer by
+/// `alignment`, and may spill past it.
+func decorationLayer(_ decoration: SFNode, alignment: Alignment) -> SFNode {
+    var layer = SFNode.makeDefault()
+    layer.kind = SF_NODE_STACK
+    layer.axis = SF_AXIS_DEPTH
+    layer.sizing = SF_SIZING_FILL
+    layer.alignment = alignment.horizontal.toSFAlignment()
+    layer.verticalAlignment = alignment.vertical.toSFAlignment()
+    var children = [decoration]
+    FrameArena.shared.storeNodes(&children) { pointer in
+        layer.children = pointer
+        layer.childrenLen = 1
+    }
+    return layer
+}
+
 /// Wraps `content` in a depth stack with `decoration` drawn in front of it.
 ///
 /// The wrapper takes the content's sizing, so the pair measures as the content
@@ -448,7 +468,7 @@ private func layered(
     node.fixedWidth = content.fixedWidth
     node.fixedHeight = content.fixedHeight
 
-    var children = [content, decoration]
+    var children = [content, decorationLayer(decoration, alignment: alignment)]
     let count = children.count
     FrameArena.shared.storeNodes(&children) { pointer in
         node.children = pointer

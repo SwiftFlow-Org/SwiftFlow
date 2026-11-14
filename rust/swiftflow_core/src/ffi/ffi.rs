@@ -164,8 +164,13 @@ pub extern "C" fn sf_hit_test_path(
 /// overlay stack (a panel pinned to a corner, a bar along the bottom) would
 /// take every press over the whole window from whatever lies under it.
 /// An outline (a stroked shape) passes presses through too. Everything
-/// else, including a rect filled with a clear colour, catches.
+/// else, including a rect filled with a clear colour, catches, and so does
+/// anything marked `catches_presses` (a button, a view with a tap or
+/// pointer handler) across its whole frame.
 fn passes_through(node: &SFNode) -> bool {
+    if node.catches_presses != 0.0 {
+        return false;
+    }
     let arranges = matches!(node.kind, SFNodeKind::Stack | SFNodeKind::Spacer | SFNodeKind::Empty)
         && node.fill.a <= 0.001
         && node.border.width <= 0.0
@@ -549,4 +554,46 @@ fn find_scroll_metrics(node: &SFNode, scroll_id: u32) -> Option<SFScrollMetrics>
     }
 
     None
+}
+
+/// Lays `root` out in a `width` × `height` pixel window at `scale`
+/// without drawing it, for tests and tools that check layout.
+#[no_mangle]
+pub extern "C" fn sf_layout_tree(root: *mut SFNode, width: f32, height: f32, scale: f32) {
+    crate::init_glyph_loader();
+    crate::init_font_system();
+    *SCALE.lock().unwrap() = scale;
+    let node = unsafe { &mut *root };
+    node.set_sizing(SFSizing::Fill);
+    layout(node, SFRect::new(0.0, 0.0, width, height));
+}
+
+/// Prints the laid-out tree under `root` to standard error: each node's
+/// kind, id, frame on screen and sizing, indented by depth. For tests and
+/// for finding out why something sits where it does.
+#[no_mangle]
+pub extern "C" fn sf_debug_print_tree(root: *const SFNode) {
+    fn walk(node: &SFNode, translate: SFPoint, scale: SFScale, depth: usize) {
+        let (translate, scale) = compose_scale(node, translate, scale);
+        let o = SFPoint { x: translate.x + node.frame.x * scale.x, y: translate.y + node.frame.y * scale.y };
+        let text = if node.text.is_null() || node.text_len == 0 {
+            String::new()
+        } else {
+            let bytes = unsafe { std::slice::from_raw_parts(node.text, node.text_len) };
+            format!(" {:?}", String::from_utf8_lossy(bytes))
+        };
+        eprintln!(
+            "{}{:?}#{} ({:.1},{:.1}) {:.1}x{:.1} sizing {:?}/{:?}{}",
+            "  ".repeat(depth), node.kind, node.node_id, o.x, o.y,
+            node.frame.width * scale.x, node.frame.height * scale.y, node.sizing_x, node.sizing_y, text
+        );
+        if !node.children.is_null() && node.children_len > 0 {
+            let children = unsafe { std::slice::from_raw_parts(node.children, node.children_len) };
+            for c in children {
+                walk(c, o, scale, depth + 1);
+            }
+        }
+    }
+    let node = unsafe { &*root };
+    walk(node, SFPoint { x: 0.0, y: 0.0 }, SFScale::DEFAULT, 0);
 }

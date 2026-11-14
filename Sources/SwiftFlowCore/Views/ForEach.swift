@@ -62,13 +62,28 @@ extension ForEach: MultiNodeView {
         var nodes: [SFNode] = []
         for element in data {
             let key = elementKey(for: element)
-            keys.append(key)
-
-            nodes.append(
-                NodeBuilder.buildAny(
-                    IdentifiedContent(content: content(element), identity: key)
-                )
-            )
+            let row = content(element)
+            let views = expandedViews(row)
+            if views.count == 1, !(row is any ExpandableView) {
+                keys.append(key)
+                nodes.append(NodeBuilder.buildAny(IdentifiedContent(content: row, identity: key)))
+                continue
+            }
+            // A row of several views (or an `if`): each takes its own place
+            // among the ForEach's children, keyed by the row and its place
+            // in it.
+            NodeBuilder.inOnePlace {
+                for (i, view) in views.enumerated() {
+                    let viewKey = i == 0 ? key : fnv1a("\(key)#\(i)")
+                    if let multi = view as? any MultiNodeView {
+                        // A nested ForEach keys its own rows.
+                        nodes.append(contentsOf: multi.buildNodes())
+                        continue
+                    }
+                    keys.append(viewKey)
+                    nodes.append(NodeBuilder.buildAny(view, identity: viewKey))
+                }
+            }
         }
 
         let registry = TransitionRegistry.shared

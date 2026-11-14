@@ -121,7 +121,11 @@ extension ZStack {
         node.kind = SF_NODE_STACK
         node.axis = SF_AXIS_DEPTH
         node.spacing = 0
-        node.sizing = SF_SIZING_HUG
+        // As in SwiftUI: flexible on an axis when something in it is (a
+        // shape, a colour, a Spacer), so a shape in a framed ZStack fills the
+        // frame; hugging its content otherwise.
+        node.sizingX = children.contains { $0.sizingX == SF_SIZING_FILL } ? SF_SIZING_FILL : SF_SIZING_HUG
+        node.sizingY = children.contains { $0.sizingY == SF_SIZING_FILL } ? SF_SIZING_FILL : SF_SIZING_HUG
         node.alignment = alignment.horizontal.toSFAlignment()
         node.verticalAlignment = alignment.vertical.toSFAlignment()
 
@@ -138,7 +142,23 @@ func buildChildren(_ view: any View) -> [SFNode] {
     if let multi = view as? any MultiNodeView {
         return multi.buildNodes()
     }
+    if let nodes = flattenedBody(view) {
+        return nodes
+    }
     return [NodeBuilder.buildAny(view)]
+}
+
+/// A view whose body is several views (or an `if`): the body's views take
+/// their places in the stack directly, as SwiftUI does, rather than the
+/// view becoming one node. Nil for any other view.
+private func flattenedBody(_ view: any View) -> [SFNode]? {
+    func open<V: View>(_ v: V) -> [SFNode]? {
+        guard V.Body.self != Never.self else { return nil }
+        let body = v.body
+        guard body is any ExpandableView else { return nil }
+        return NodeBuilder.inOnePlace { buildChildren(body) }
+    }
+    return open(view)
 }
 
 extension HorizontalAlignment {

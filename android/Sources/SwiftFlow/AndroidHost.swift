@@ -65,6 +65,9 @@ public final class AndroidHost {
 
         FrameArena.shared.reset()
         NodeFrames.shared.beginFrame()
+        // Cleared before the build, not after: whatever the build or the
+        // frames recorded below mark dirty gets the next frame.
+        NodeRegistry.shared.clearDirty()
         var node = NodeBuilder.build(rootView)
         sf_render_tree(&node, Float(surface.width), Float(surface.height), surface.scale)
 
@@ -80,7 +83,6 @@ public final class AndroidHost {
         }
 
         cachedNode = node
-        NodeRegistry.shared.clearDirty()
     }
 
     func pointerDown(x: Float, y: Float, t: Double) {

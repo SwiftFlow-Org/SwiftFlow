@@ -57,6 +57,80 @@ extension TupleView: MultiNodeView {
         repeat groups.append(buildChildren(each value))
         return groups.flatMap { $0 }
     }
+
+    /// The views in the tuple, one by one, with any tuple, `if` or
+    /// optional among them opened up in turn.
+    func childViews() -> [any View] {
+        var views: [any View] = []
+        repeat views.append(contentsOf: expandedViews(each value))
+        return views
+    }
+
+    /// Several views where one node is wanted (a modifier's content, a
+    /// body built on its own): stacked over each other, as a ZStack would.
+    public func toSFNode() -> SFNode {
+        NodeListView(nodes: buildNodes()).toSFNode()
+    }
+}
+
+/// `view` as the views it stands for: a tuple, `if` or optional opened up
+/// into its views (none for an empty one), anything else as itself.
+func expandedViews(_ view: any View) -> [any View] {
+    switch view {
+    case let tuple as any ExpandableView: return tuple.childViews()
+    default: return [view]
+    }
+}
+
+/// A view that stands for some number of other views rather than being
+/// one: a tuple of views, or an `if` or optional around one.
+protocol ExpandableView {
+    func childViews() -> [any View]
+}
+
+extension TupleView: ExpandableView {}
+
+extension ConditionalView: ExpandableView {
+    func childViews() -> [any View] {
+        switch self {
+        case .trueContent(let v): return expandedViews(v)
+        case .falseContent(let v): return expandedViews(v)
+        }
+    }
+}
+
+extension Optional: ExpandableView where Wrapped: View {
+    func childViews() -> [any View] {
+        switch self {
+        case .some(let v): return expandedViews(v)
+        case .none: return []
+        }
+    }
+}
+
+/// An `if` or optional among a stack's children: its views take their
+/// places in the stack directly, so a branch of several views shows them
+/// all and an empty one takes no room (nor spacing). It keeps one place in
+/// the build's numbering whatever it holds, so the views after it keep
+/// their identity when it changes.
+extension ConditionalView: MultiNodeView {
+    func buildNodes() -> [SFNode] {
+        switch self {
+        case .trueContent(let v): return NodeBuilder.inOnePlace { buildChildren(v) }
+        case .falseContent(let v): return NodeBuilder.inOnePlace { buildChildren(v) }
+        }
+    }
+}
+
+extension Optional: MultiNodeView where Wrapped: View {
+    func buildNodes() -> [SFNode] {
+        switch self {
+        case .some(let v): return NodeBuilder.inOnePlace { buildChildren(v) }
+        case .none:
+            NodeBuilder.inOnePlace {}
+            return []
+        }
+    }
 }
 
 struct NodeListView: View {
@@ -72,7 +146,9 @@ struct NodeListView: View {
         var node = SFNode.makeDefault()
         node.kind = SF_NODE_STACK
         node.axis = SF_AXIS_DEPTH
-        node.sizing = SF_SIZING_FILL
+        // As a ZStack: filling on an axis only when something in it fills.
+        node.sizingX = nodes.contains { $0.sizingX == SF_SIZING_FILL } ? SF_SIZING_FILL : SF_SIZING_HUG
+        node.sizingY = nodes.contains { $0.sizingY == SF_SIZING_FILL } ? SF_SIZING_FILL : SF_SIZING_HUG
 
         let count = kids.count
         FrameArena.shared.storeNodes(&kids) { pointer in
