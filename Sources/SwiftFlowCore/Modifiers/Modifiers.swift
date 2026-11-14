@@ -335,6 +335,52 @@ extension View {
     }
 }
 
+/// `opacity` applied to every node of a view, not only its outermost one.
+public struct TreeOpacityModifier<Content: View>: View {
+    public typealias Body = Never
+    public var body: Never { fatalError() }
+    let content: Content
+    let opacity: Float
+
+    public func toSFNode() -> SFNode {
+        var node = content.toSFNode()
+        if opacity < 1 {
+            Self.fade(&node, by: max(opacity, 0))
+        }
+        return node
+    }
+
+    private static func fade(_ node: inout SFNode, by opacity: Float) {
+        node.color.a *= opacity
+        node.fill.a *= opacity
+        node.border.color.a *= opacity
+        node.shadowOpacity *= opacity
+        // Glass and materials: less blur and bending the fainter they are,
+        // down to none. The rim is drawn at full strength or not at all,
+        // so it goes for the fainter half.
+        node.blurRadius *= opacity
+        node.glassRefraction *= opacity
+        if opacity < 0.5 { node.specular = 0 }
+        guard let children = node.children else { return }
+        for i in 0..<Int(node.childrenLen) {
+            fade(&children[i], by: opacity)
+        }
+    }
+}
+
+extension View {
+    /// Fades this view and everything in it: each node's colours, border
+    /// and shadow are multiplied by `value`, and a material's blur and
+    /// refraction scaled down with it (its rim is left out below 0.5).
+    /// The parts are faded one by one rather than drawn to a layer and
+    /// faded together, so where they overlap they show through each other.
+    /// Good for fading a screen in or out, not for a steady see-through
+    /// look.
+    public func treeOpacity(_ value: Float) -> TreeOpacityModifier<Self> {
+        TreeOpacityModifier(content: self, opacity: value)
+    }
+}
+
 public struct OffsetModifier<Content: View>: View {
     public typealias Body = Never
     public var body: Never { fatalError() }

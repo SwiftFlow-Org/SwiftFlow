@@ -13,6 +13,7 @@ public enum NodeBuilder {
         PointerRegistry.shared.beginBuild()
 
         TextInput.shared.beginBuild()
+        MatchedGeometry.shared.beginBuild()
 
         EnvironmentValues.beginBuild()
 

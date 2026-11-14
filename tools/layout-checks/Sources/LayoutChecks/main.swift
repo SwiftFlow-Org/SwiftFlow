@@ -314,5 +314,88 @@ do {
     check("measured(as:) on a button measures it", f.width > 0, "\(f)")
 }
 
+// ── Matched geometry ───────────────────────────────────────────────────
+
+let checksSpace = GeometryNamespace("checks")
+nonisolated(unsafe) var matchedMoved = false
+
+struct MatchedSmall: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 0).fill(Color(hex: 0xFF0000)).frame(width: 40, height: 40)
+            .matchedGeometryEffect(id: "box", in: checksSpace)
+            .padding(EdgeInsets(top: 10, bottom: 0, leading: 10, trailing: 0))
+    }
+}
+
+struct MatchedLarge: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 0).fill(Color(hex: 0xFF0000)).frame(width: 100, height: 80)
+            .matchedGeometryEffect(id: "box", in: checksSpace)
+            .padding(EdgeInsets(top: 200, bottom: 0, leading: 200, trailing: 0))
+    }
+}
+
+/// The ZStack hugs its view and sits in the middle of the 400 × 400 frame:
+/// the small box's centre is at (205, 205), the large one's at (300, 300).
+struct Matched: View {
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Two places, not two branches of one if: one place holds one view.
+            if !matchedMoved { MatchedSmall() }
+            if matchedMoved { MatchedLarge() }
+        }
+        .frame(width: 400, height: 400)
+    }
+}
+
+/// Builds and lays out as a host does, keeping the frames asked for.
+func hostFrame<V: View>(_ view: V) -> [Laid] {
+    NodeFrames.shared.beginFrame()
+    var (root, laid) = layOut(view)
+    for id in NodeFrames.shared.tracked {
+        NodeFrames.shared.record(id, frame: sf_get_node_frame(&root, id))
+    }
+    return laid
+}
+
+do {
+    matchedMoved = false
+    _ = hostFrame(Matched())
+    _ = hostFrame(Matched())
+    matchedMoved = true
+    _ = hostFrame(Matched())
+    var root = NodeBuilder.build(Matched())
+    sf_layout_tree(&root, window.width, window.height, 1)
+    // Offset and scale sit on the box or a node above it; add them up.
+    func drawn(_ n: SFNode, _ ox: Float, _ oy: Float, _ sx: Float, _ sy: Float, _ dx: Float, _ dy: Float) -> (Float, Float, Float, Float)? {
+        let x = ox + n.frame.x, y = oy + n.frame.y
+        let ddx = dx + n.offsetX, ddy = dy + n.offsetY
+        let ssx = sx * n.scale.x, ssy = sy * n.scale.y
+        if n.fill.r == 1 && n.fill.g == 0 && n.frame.width > 0 {
+            return (x + n.frame.width / 2 + ddx, y + n.frame.height / 2 + ddy, n.frame.width * ssx, n.frame.height * ssy)
+        }
+        if let kids = n.children {
+            for i in 0..<Int(n.childrenLen) {
+                if let f = drawn(kids[i], x, y, ssx, ssy, ddx, ddy) { return f }
+            }
+        }
+        return nil
+    }
+    if let b = drawn(root, 0, 0, 1, 1, 0, 0) {
+        check("a matched view starts where the last one with its id was",
+              abs(b.0 - 205) < 3 && abs(b.1 - 205) < 3 && abs(b.2 - 40) < 3 && abs(b.3 - 40) < 3, "\(b)")
+    } else {
+        check("a matched view starts where the last one with its id was", false, "no box")
+    }
+    Thread.sleep(forTimeInterval: 1.5)
+    _ = hostFrame(Matched())
+    root = NodeBuilder.build(Matched())
+    root = NodeBuilder.build(Matched())
+    sf_layout_tree(&root, window.width, window.height, 1)
+    if let b = drawn(root, 0, 0, 1, 1, 0, 0) {
+        check("…and ends at its own frame", abs(b.0 - 300) < 1 && abs(b.1 - 300) < 1 && abs(b.2 - 100) < 1 && abs(b.3 - 80) < 1, "\(b)")
+    }
+}
+
 print(failures == 0 ? "all passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)
