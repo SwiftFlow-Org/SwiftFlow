@@ -55,7 +55,10 @@ fn vs_main(
     let rect_w = instance.rect.z;
     let rect_h = instance.rect.w;
 
-    let grow = instance.shadow.x;
+    // A pixel more than the shadow on every side, for the antialiased
+    // edge: a rect whose edge falls between pixel centres (a 1 px line on a
+    // half pixel) would otherwise lose the pixels its edge only part covers.
+    let grow = instance.shadow.x + 1.0;
 
     let pixel = vec2<f32>(
         rect_x - grow + local.x * (rect_w + 2.0 * grow),
@@ -303,8 +306,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let border = smoothstep( aa, -aa, dist)
                - smoothstep( aa, -aa, dist + border_width);
 
-    var color = vec4<f32>(0.0);
-    color = mix(color, in.fill,         fill);
+    // Straight alpha: the edge's coverage goes in the alpha only. Mixing
+    // from transparent black would scale the colour by it too, and the
+    // blend multiplies by alpha again, so a half-covered edge pixel showed
+    // at a quarter and thin lines came out faint.
+    var color = vec4<f32>(in.fill.rgb, in.fill.a * fill);
     color = border_over(color, in.border_color, border);
 
     let specular = in.params.z;
@@ -476,8 +482,7 @@ fn fs_merged(in: MergedVertexOutput) -> @location(0) vec4<f32> {
     let border_mask = smoothstep(aa, -aa, dist)
                     - smoothstep(aa, -aa, dist + folded.border_width);
 
-    var color = vec4<f32>(0.0);
-    color = mix(color, folded.fill,         fill_mask);
+    var color = vec4<f32>(folded.fill.rgb, folded.fill.a * fill_mask);
     color = border_over(color, folded.border_color, border_mask);
 
     let normal     = sd_merged_normal(p_screen, inst_idx, count, blend_k, color_blend_k);
